@@ -1,3 +1,3 @@
-mod pinochle;
-mod agent;
-mod core;
+pub mod pinochle;
+pub mod agent;
+pub mod core;
