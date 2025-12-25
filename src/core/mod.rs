@@ -89,17 +89,52 @@ impl Card {
 }
 
 impl Suit {
+    pub const ALL: [Suit; 4] = [Suit::Spades, Suit::Hearts, Suit::Diamonds, Suit::Clubs];
+
+    pub const MASKS: [u64; 4] = [
+        0xFFF << (0 * 12),
+        0xFFF << (1 * 12),
+        0xFFF << (2 * 12),
+        0xFFF << (3 * 12),
+    ];
+
+    /// Returns the precomputed mask for the current suit
     #[inline(always)]
-    pub const fn bitmask(self) -> u64 {
-        0xFFF << (self as u64 * 12)
+    pub const fn mask(self) -> u64 {
+        Self::MASKS[self as usize]
+    }
+
+    #[inline(always)]
+    pub const fn bit_offset(self) -> u32 {
+        (self as u32) * 12
     }
 }
 
 impl Rank {
+    pub const ALL: [Rank; 6] = [Rank::Nine, Rank::Jack, Rank::Queen, Rank::King, Rank::Ten, Rank::Ace];
+
+    pub const MASKS: [u64; 6] = [
+        Self::calculate_mask(0), // Nine
+        Self::calculate_mask(1), // Jack
+        Self::calculate_mask(2), // Queen
+        Self::calculate_mask(3), // King
+        Self::calculate_mask(4), // Ten
+        Self::calculate_mask(5), // Ace
+    ];
+    const fn calculate_mask(rank_index: u64) -> u64 {
+        let bits = 0b11 << (rank_index * 2);
+        bits | (bits << 12) | (bits << 24) | (bits << 36)
+    }
+
     /// Returns a mask for both copies of this rank across ALL suits.
-    pub const fn global_mask(self) -> u64 {
-        let suit_bits = 0b11 << (self as u64 * 2);
-        suit_bits | (suit_bits << 12) | (suit_bits << 24) | (suit_bits << 36)
+    #[inline(always)]
+    pub const fn mask(self) -> u64 {
+        Self::MASKS[self as usize]
+    }
+
+    #[inline(always)]
+    pub const fn bit_offset(self) -> u32 {
+        (self as u32) * 2
     }
 
     #[inline(always)]
@@ -140,7 +175,7 @@ mod tests {
     #[test]
     fn test_rank_masks() {
         // Ensure the global mask for Aces has 8 bits set (2 for each suit)
-        let aces_mask = Rank::Ace.global_mask();
+        let aces_mask = Rank::Ace.mask();
         assert_eq!(aces_mask.count_ones(), 8);
 
         // Verify a specific Ace is in the mask
