@@ -57,5 +57,4 @@ pub trait Agent {
 }
 ```
 
-This leaves complexity completely in the hand of the implementor. Keep track of as
-much or as little data you like and do equally as much or little analysis.
+This leaves complexity completely in the hand of the implementor. 
