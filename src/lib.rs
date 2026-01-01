@@ -1,3 +1,4 @@
-pub mod pinochle;
+pub mod game;
 pub mod agent;
-pub mod core;
+mod types;
+mod meld;
