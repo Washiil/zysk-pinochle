@@ -40,7 +40,7 @@ impl PinochleState {
 }
 
 #[cfg(test)]
-mod tests {
+mod game_tests {
     use super::*;
     use std::mem;
 

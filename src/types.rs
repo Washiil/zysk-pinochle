@@ -76,7 +76,7 @@ impl Rank {
 }
 
 #[cfg(test)]
-mod tests {
+mod types_tests {
     use super::*;
     use std::mem;
 

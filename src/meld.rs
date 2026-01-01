@@ -64,7 +64,7 @@ const fn compute_suit_meld(bits: u16, is_trump: bool) -> u16 {
 }
 
 #[cfg(test)]
-mod tests {
+mod meld_tests {
     use super::*;
 
     #[test]
