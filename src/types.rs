@@ -47,7 +47,7 @@ pub enum Rank {
 
 impl Rank {
     const COPIES_PER_RANK: usize = 2;
-    const PAIR_MASK: u64 = 0b11;
+    const PAIR_MASK: u16 = 0b11;
     const SUIT_WIDTH: usize = 12;
 
     #[inline(always)]
@@ -63,13 +63,13 @@ impl Rank {
     }
 
     #[inline(always)]
-    pub const fn relative_mask(self) -> u64 {
+    pub const fn relative_mask(self) -> u16 {
         Self::PAIR_MASK << (self.power_index() * Self::COPIES_PER_RANK)
     }
 
     #[inline(always)]
     pub const fn global_mask(self) -> u64 {
-        let m = self.relative_mask();
+        let m = self.relative_mask() as u64;
 
         m | (m << Self::SUIT_WIDTH) | (m << (Self::SUIT_WIDTH * 2)) | (m << (Self::SUIT_WIDTH * 3))
     }
@@ -98,7 +98,6 @@ mod tests {
     #[test]
     fn test_suit_masks() {
         let deck: u64 = 0b111111111111_111111111111_111111111111_111111111111;
-
         assert_eq!(deck & Suit::Spades.mask(),   0b000000000000_000000000000_000000000000_111111111111);
         assert_eq!(deck & Suit::Clubs.mask(),    0b000000000000_000000000000_111111111111_000000000000);
         assert_eq!(deck & Suit::Hearts.mask(),   0b000000000000_111111111111_000000000000_000000000000);
@@ -109,8 +108,6 @@ mod tests {
     #[test]
     fn test_rank_mask() {
         let deck: u64 = 0b111111111111_111111111111_111111111111_111111111111;
-
-        // Global Masks
         assert_eq!(deck & Rank::Nine.global_mask(),  0b000000000011_000000000011_000000000011_000000000011);
         assert_eq!(deck & Rank::Jack.global_mask(),  0b000000001100_000000001100_000000001100_000000001100);
         assert_eq!(deck & Rank::Queen.global_mask(), 0b000000110000_000000110000_000000110000_000000110000);
@@ -119,13 +116,13 @@ mod tests {
         assert_eq!(deck & Rank::Ace.global_mask(),   0b110000000000_110000000000_110000000000_110000000000);        assert_eq!(deck & Suit::Clubs.mask() & Suit::Spades.mask(),  0);
         assert_eq!(deck & Rank::Nine.global_mask() & Rank::Ten.global_mask(),  0);
 
-        // Single Suit
-        assert_eq!(deck & Rank::Nine.relative_mask(),  0b000000000011);
-        assert_eq!(deck & Rank::Jack.relative_mask(),  0b000000001100);
-        assert_eq!(deck & Rank::Queen.relative_mask(), 0b000000110000);
-        assert_eq!(deck & Rank::King.relative_mask(),  0b000011000000);
-        assert_eq!(deck & Rank::Ten.relative_mask(),   0b001100000000);
-        assert_eq!(deck & Rank::Ace.relative_mask(),   0b110000000000);
-        assert_eq!(deck & Rank::Nine.relative_mask() & Rank::Ten.relative_mask(),  0);
+        let single_suit: u16 = 0b111111111111;
+        assert_eq!(single_suit & Rank::Nine.relative_mask(), 0b000000000011);
+        assert_eq!(single_suit & Rank::Jack.relative_mask(), 0b000000001100);
+        assert_eq!(single_suit & Rank::Queen.relative_mask(), 0b000000110000);
+        assert_eq!(single_suit & Rank::King.relative_mask(), 0b000011000000);
+        assert_eq!(single_suit & Rank::Ten.relative_mask(), 0b001100000000);
+        assert_eq!(single_suit & Rank::Ace.relative_mask(), 0b110000000000);
+        assert_eq!(single_suit & Rank::Nine.relative_mask() & Rank::Ten.relative_mask(), 0);
     }
 }
