@@ -14,7 +14,7 @@ A deck representation can be understood from the following:
 ```
 // I am ommiting the 16 unused bits at the front of the deck
 Deck:   | 000000000000_000000000000_000000000000_000000000000 |
-Suits:  | SSSSSSSSSSSS_CCCCCCCCCCCC_DDDDDDDDDDDD_HHHHHHHHHHHH |
+Suits:  | DDDDDDDDDDDD_HHHHHHHHHHHH_CCCCCCCCCCCC_SSSSSSSSSSSS |
 Ranks:  | AATTKKQQJJ99_AATTKKQQJJ99_AATTKKQQJJ99_AATTKKQQJJ99 |
 ```
 

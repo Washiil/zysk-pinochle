@@ -79,7 +79,6 @@ impl Rank {
 mod tests {
     use super::*;
     use std::mem;
-    use crate::game::PinochleState;
 
     #[test]
     fn test_memory_size() {
@@ -94,5 +93,39 @@ mod tests {
             1,
             "Rank must be exactly 1 bytes"
         );
+    }
+
+    #[test]
+    fn test_suit_masks() {
+        let deck: u64 = 0b111111111111_111111111111_111111111111_111111111111;
+
+        assert_eq!(deck & Suit::Spades.mask(),   0b000000000000_000000000000_000000000000_111111111111);
+        assert_eq!(deck & Suit::Clubs.mask(),    0b000000000000_000000000000_111111111111_000000000000);
+        assert_eq!(deck & Suit::Hearts.mask(),   0b000000000000_111111111111_000000000000_000000000000);
+        assert_eq!(deck & Suit::Diamonds.mask(), 0b111111111111_000000000000_000000000000_000000000000);
+        assert_eq!(deck & Suit::Clubs.mask() & Suit::Spades.mask(),  0);
+    }
+
+    #[test]
+    fn test_rank_mask() {
+        let deck: u64 = 0b111111111111_111111111111_111111111111_111111111111;
+
+        // Global Masks
+        assert_eq!(deck & Rank::Nine.global_mask(),  0b000000000011_000000000011_000000000011_000000000011);
+        assert_eq!(deck & Rank::Jack.global_mask(),  0b000000001100_000000001100_000000001100_000000001100);
+        assert_eq!(deck & Rank::Queen.global_mask(), 0b000000110000_000000110000_000000110000_000000110000);
+        assert_eq!(deck & Rank::King.global_mask(),  0b000011000000_000011000000_000011000000_000011000000);
+        assert_eq!(deck & Rank::Ten.global_mask(),   0b001100000000_001100000000_001100000000_001100000000);
+        assert_eq!(deck & Rank::Ace.global_mask(),   0b110000000000_110000000000_110000000000_110000000000);        assert_eq!(deck & Suit::Clubs.mask() & Suit::Spades.mask(),  0);
+        assert_eq!(deck & Rank::Nine.global_mask() & Rank::Ten.global_mask(),  0);
+
+        // Single Suit
+        assert_eq!(deck & Rank::Nine.relative_mask(),  0b000000000011);
+        assert_eq!(deck & Rank::Jack.relative_mask(),  0b000000001100);
+        assert_eq!(deck & Rank::Queen.relative_mask(), 0b000000110000);
+        assert_eq!(deck & Rank::King.relative_mask(),  0b000011000000);
+        assert_eq!(deck & Rank::Ten.relative_mask(),   0b001100000000);
+        assert_eq!(deck & Rank::Ace.relative_mask(),   0b110000000000);
+        assert_eq!(deck & Rank::Nine.relative_mask() & Rank::Ten.relative_mask(),  0);
     }
 }
