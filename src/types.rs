@@ -2,7 +2,7 @@
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     /// Play a card (0..47)
-    Play(u8),
+    Play(Card),
     /// Place a Bid
     Bid(u8),
 }
@@ -94,6 +94,45 @@ impl Rank {
 
         m | (m << Self::SUIT_WIDTH) | (m << (Self::SUIT_WIDTH * 2)) | (m << (Self::SUIT_WIDTH * 3))
     }
+
+    #[inline(always)]
+    pub const fn from_index(index: u8) -> Rank {
+        let val = index % 12;
+        match val {
+            0..=1 => Rank::Nine,
+            2..=3 => Rank::Jack,
+            4..=5 => Rank::Queen,
+            6..=7 => Rank::King,
+            8..=9 => Rank::Ten,
+            10..=11 => Rank::Ace,
+            _ => unreachable!()
+        }
+    }
+
+    #[inline(always)]
+    pub const fn higher_mask(self) -> u16 {
+        const SUIT_MASK: u16 = 0b1111_1111_1111;
+        let shift = (self.power_index() + 1) * Self::COPIES_PER_RANK;
+
+        if shift >= 12 {
+            0
+        } else {
+            (!0u16 << shift) & SUIT_MASK
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Card {
+    pub rank: Rank,
+    pub suit: Suit,
+}
+
+impl Card {
+    fn new(rank: Rank, suit: Suit) -> Card {
+        Card { rank, suit }
+    }
 }
 
 #[cfg(test)]
@@ -114,6 +153,12 @@ mod types_tests {
             1,
             "Rank must be exactly 1 bytes"
         );
+
+        assert_eq!(
+            mem::size_of::<Card>(),
+            2,
+            "Card must be exactly 2 bytes"
+        );
     }
 
     #[test]
@@ -124,6 +169,18 @@ mod types_tests {
         assert_eq!(deck & Suit::Hearts.mask(),   0b000000000000_111111111111_000000000000_000000000000);
         assert_eq!(deck & Suit::Diamonds.mask(), 0b111111111111_000000000000_000000000000_000000000000);
         assert_eq!(deck & Suit::Clubs.mask() & Suit::Spades.mask(),  0);
+    }
+
+    #[test]
+    fn test_suit_from_index() {
+        assert_eq!(Suit::from_index(0),  Suit::Spades);
+        assert_eq!(Suit::from_index(11), Suit::Spades);
+        assert_eq!(Suit::from_index(12), Suit::Clubs);
+        assert_eq!(Suit::from_index(23), Suit::Clubs);
+        assert_eq!(Suit::from_index(24), Suit::Hearts);
+        assert_eq!(Suit::from_index(35), Suit::Hearts);
+        assert_eq!(Suit::from_index(36), Suit::Diamonds);
+        assert_eq!(Suit::from_index(47), Suit::Diamonds);
     }
 
     #[test]
@@ -148,14 +205,28 @@ mod types_tests {
     }
 
     #[test]
-    fn test_suit_from_index() {
-        assert_eq!(Suit::from_index(0),  Suit::Spades);
-        assert_eq!(Suit::from_index(11), Suit::Spades);
-        assert_eq!(Suit::from_index(12), Suit::Clubs);
-        assert_eq!(Suit::from_index(23), Suit::Clubs);
-        assert_eq!(Suit::from_index(24), Suit::Hearts);
-        assert_eq!(Suit::from_index(35), Suit::Hearts);
-        assert_eq!(Suit::from_index(36), Suit::Diamonds);
-        assert_eq!(Suit::from_index(47), Suit::Diamonds);
+    fn test_rank_from_index() {
+        assert_eq!(Rank::from_index(0), Rank::Nine);
+        assert_eq!(Rank::from_index(1), Rank::Nine);
+        assert_eq!(Rank::from_index(2), Rank::Jack);
+        assert_eq!(Rank::from_index(3), Rank::Jack);
+        assert_eq!(Rank::from_index(4), Rank::Queen);
+        assert_eq!(Rank::from_index(5), Rank::Queen);
+        assert_eq!(Rank::from_index(6), Rank::King);
+        assert_eq!(Rank::from_index(7), Rank::King);
+        assert_eq!(Rank::from_index(8), Rank::Ten);
+        assert_eq!(Rank::from_index(9), Rank::Ten);
+        assert_eq!(Rank::from_index(10), Rank::Ace);
+        assert_eq!(Rank::from_index(11), Rank::Ace);
+    }
+
+    #[test]
+    fn test_higher_mask() {
+        assert_eq!(Rank::Nine.higher_mask(),  0b111111111100);
+        assert_eq!(Rank::Jack.higher_mask(),  0b111111110000);
+        assert_eq!(Rank::Queen.higher_mask(), 0b111111000000);
+        assert_eq!(Rank::King.higher_mask(),  0b111100000000);
+        assert_eq!(Rank::Ten.higher_mask(),   0b110000000000);
+        assert_eq!(Rank::Ace.higher_mask(),   0b000000000000);
     }
 }
