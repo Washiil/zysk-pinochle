@@ -1,5 +1,14 @@
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Action {
+    /// Play a card (0..47)
+    Play(u8),
+    /// Place a Bid
+    Bid(u8),
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Suit {
     Spades,
     Clubs,
@@ -31,6 +40,18 @@ impl Suit {
     #[inline(always)]
     pub const fn mask(self) -> u64 {
         0xFFF << self.shift()
+    }
+
+    #[inline(always)]
+    pub const fn from_index(index: u8) -> Suit {
+        let val = index / 12;
+        match val {
+            0 => Suit::Spades,
+            1 => Suit::Clubs,
+            2 => Suit::Hearts,
+            3 => Suit::Diamonds,
+            _ => unreachable!()
+        }
     }
 }
 
@@ -124,5 +145,17 @@ mod types_tests {
         assert_eq!(single_suit & Rank::Ten.relative_mask(), 0b001100000000);
         assert_eq!(single_suit & Rank::Ace.relative_mask(), 0b110000000000);
         assert_eq!(single_suit & Rank::Nine.relative_mask() & Rank::Ten.relative_mask(), 0);
+    }
+
+    #[test]
+    fn test_suit_from_index() {
+        assert_eq!(Suit::from_index(0),  Suit::Spades);
+        assert_eq!(Suit::from_index(11), Suit::Spades);
+        assert_eq!(Suit::from_index(12), Suit::Clubs);
+        assert_eq!(Suit::from_index(23), Suit::Clubs);
+        assert_eq!(Suit::from_index(24), Suit::Hearts);
+        assert_eq!(Suit::from_index(35), Suit::Hearts);
+        assert_eq!(Suit::from_index(36), Suit::Diamonds);
+        assert_eq!(Suit::from_index(47), Suit::Diamonds);
     }
 }
