@@ -1,72 +1,111 @@
 use rand::seq::SliceRandom;
-use crate::types::{Action, Rank, Suit};
+use log::debug;
+use crate::types::{Action, Rank, Suit, Player, GamePhase};
 
 #[repr(C, align(64))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PinochleState {
-    // hands[0] = Player 0 (Dealer left)
-    pub hands: [u64; 4], // 8 * 4 = 32
+    // --- 32 Bytes ---
+    // hands[0] = Player 0. Bitboard (bits 0-47 set for cards held)
+    pub hands: [u64; 4],
 
-    // Cards the table has "seen"
-    pub dead_cards: [u64; 2], // 8 * 2 = 16
+    // --- 4 Bytes ---
+    // Cards currently on the table.
+    // Index matches Player ID. 255 = No card played.
+    pub trick_cards: [u8; 4],
 
-    // Stores card INDICES (0-47).
-    // trick_cards[0] is always Player 0's card, regardless of who led.
-    // 255 is a sentinel value for non-played card
-    pub trick_cards: [u8; 4], // 1 * 4 = 4
+    // --- 4 Bytes ---
+    // Global Game Score (e.g., towards 1500)
+    // Using i16 allows for negative scores if a team goes set.
+    pub scores: [i16; 2],
 
-    // Store the running game score computed
-    pub scores: [u16; 2], // 2 * 2 = 4
-    pub active_meld: [u8; 2], // 1 * 2 = 2
+    // --- 4 Bytes ---
+    // Points taken in tricks *this hand only* (Counters + Last Trick Bonus)
+    // Needed to verify against the bid at the end.
+    pub trick_points: [u16; 2],
 
-    pub trump_suit: Suit, // 0..3 1 * 1 = 1
-    pub turn: u8,         // 0..3 (Current player ID) 1 * 1 = 1
-    pub leader: u8,       // 0..3 (Who led this trick) 1 * 1 = 1
+    // --- 4 Bytes ---
+    // Meld points declared at start of hand.
+    // Changed to i16 because meld can exceed 255 (e.g., 300 for Double Marriage).
+    pub meld_score: [i16; 2],
 
-    // Padding to fill 64 byte cache line
-    pub game_state: GameState,
+    // --- 2 Bytes ---
+    // The winning bid amount (e.g., 50, 60, ... 500)
+    pub current_bid: u16,
+
+    // --- 5 Bytes (Control Flags) ---
+    pub trump_suit: Suit,     // 0-3 (Consider 255 for "No Trump Selected Yet")
+    pub turn: Option<Player>,         // 0-3 (Whose action is it?)
+    pub leader: Option<Player>,       // 0-3 (Who led the current trick?)
+    pub bid_winner: Option<Player>,   // 0-3 (Who won the bid? 255 if bidding in progress)
+    pub phase: GamePhase,        // Enum discriminant (Bidding, Passing, Melding, Playing)
+
+    // --- Remaining Bytes ---
+    // 9 bytes of padding automatically added here to reach 64-byte alignment
 }
 
 impl PinochleState {
     pub fn new() -> Self {
+        let starting_hands = Self::deal();
+
         Self {
-            hands: Self::deal(),
-            dead_cards: [0; 2],
-            trick_cards: [0; 4],
-            scores: [0; 2],
-            active_meld: [0; 2],
-            trump_suit: Suit::Clubs,
-            turn: 0,
-            leader: 0,
-            _padding: [0; 3],
+            hands: starting_hands,
+            trick_cards: [255; 4],
+            scores: [0, 0],
+            trick_points: [0, 0],
+            meld_score: [0, 0],
+            current_bid: 0,
+            trump_suit: Suit::Spades,
+            turn: None,
+            leader: None,
+            bid_winner: None,
+            phase: GamePhase::Bidding,
         }
     }
 
+    /// Deals cards from a standard deck into 4 piles "randomly"
     fn deal() -> [u64; 4] {
         let mut rng = rand::rng();
-        let mut deck: Vec<u8> = (0..48).collect();
+
+        // Create array on stack (no heap allocation)
+        let mut deck: [u8; 48] = [0; 48];
+        for i in 0..48 { deck[i] = i as u8; }
+
         deck.shuffle(&mut rng);
+
         let mut hands = [0u64; 4];
 
-        for (i, &card_index) in deck.iter().enumerate() {
+        for i in 0..48 {
+            let card_index = deck[i];
             let player = i / 12;
 
-            // Turn the card index into a bitmask and add it to the player's hand
             hands[player] |= 1u64 << card_index;
         }
+
         hands
     }
 
-    pub fn legal_moves(&self) -> u64 {
-        let hand = self.hands[self.turn as usize];
+    /// Computes the legal moves for a given game state
+    pub fn legal_moves(&self, turn: Player) -> u64 {
+        if self.phase == GamePhase::Bidding {
+            return 0;
+        }
 
-        // Leader can lead any card
-        if self.leader == self.turn {
+        let Some(leader) = self.leader else {
+            return 0;
+        };
+
+        let hand = self.hands[turn as usize];
+
+        if leader == turn {
             return hand;
         }
 
-        let lead_card_idx = self.trick_cards[self.leader as usize];
-        assert_ne!(lead_card_idx, 255, "Leader did not play card.");
+        let lead_card_idx = self.trick_cards[leader as usize];
+        if lead_card_idx > 48 {
+            dbg!("Leader has not played a card yet! {:?}", self.trick_cards);
+            return 0;
+        }
 
         let lead_suit = Suit::from_index(lead_card_idx);
         let mut trump_to_beat = Rank::Nine;
@@ -145,21 +184,48 @@ mod game_tests {
     }
 
     #[test]
-    fn test_legal_moves() {
-        let hand = 0b000000000000_000000000000_000000000000_100000000001;
-        let s1 = PinochleState {
-            hands: [hand, 0, 0, 0],
-            dead_cards: [0, 0],
-            trick_cards: [0, 1, 2, 3],
-            scores: [0, 0],
-            active_meld: [0, 0],
-            trump_suit: Suit::Spades,
-            turn: 0,
-            leader: 1,
-            _padding: [0; 3],
-        };
-        let moves = s1.legal_moves();
+    fn test_legal_moves_leader() {
+        let mut s1 = PinochleState::new();
+        s1.hands = [
+        //  |Diamonds     |Hearts      |Clubs       |Spades
+            0b000000000111_111000000000_111000000000_000000000111, // Player::One
+            0b000000111000_000111000000_000111000000_000000111000,
+            0b000111000000_000000111000_000000111000_000111000000,
+            0b111000000000_000000000111_000000000111_111000000000  // Player:: Four
+        //   47           35           23           11          0
+        ];
 
-        assert_eq!(moves, 0b000000000000_000000000000_000000000000_100000000000)
+        s1.trump_suit = Suit::Spades;
+        s1.phase = GamePhase::TrickTaking;
+        s1.leader = Some(Player::One);
+        let moves = s1.legal_moves(Player::One);
+
+        assert_eq!(moves, s1.hands[Player::One as usize]);
+        assert_eq!(s1.legal_moves(Player::Two), 0);
+        assert_eq!(s1.legal_moves(Player::Three), 0);
+        assert_eq!(s1.legal_moves(Player::Four), 0);
+    }
+
+    #[test]
+    fn test_legal_moves_in_suit() {
+        let mut s1 = PinochleState::new();
+        s1.hands = [
+            //  |Diamonds     |Hearts      |Clubs       |Spades
+            0b000000000111_111000000000_111000000000_000000000111, // Player::One
+            0b000000111000_000111000000_000111000000_000000111000,
+            0b000111000000_000000111000_000000111000_000111000000,
+            0b111000000000_000000000111_000000000111_111000000000  // Player:: Four
+            //   47           35           23           11          0
+        ];
+
+        s1.trump_suit = Suit::Spades;
+        s1.phase = GamePhase::TrickTaking;
+        s1.leader = Some(Player::Two);
+
+        s1.trick_cards = [
+            255, 1, 2, 3
+        ];
+
+        assert_eq!(s1.legal_moves(Player::One), 0b000000000111);
     }
 }

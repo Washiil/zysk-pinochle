@@ -1,3 +1,22 @@
+use std::cmp::Ordering;
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Player {
+    One = 0,
+    Two = 1,
+    Three = 2,
+    Four = 3,
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum GamePhase {
+    Bidding,
+    TrickTaking,
+    Finished,
+}
+
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -96,6 +115,16 @@ impl Rank {
     }
 
     #[inline(always)]
+    pub const fn higher_global_mask(self) -> u64 {
+        let suit_mask = self.higher_mask() as u64;
+
+        suit_mask
+            | (suit_mask << Self::SUIT_WIDTH)
+            | (suit_mask << (Self::SUIT_WIDTH * 2))
+            | (suit_mask << (Self::SUIT_WIDTH * 3))
+    }
+
+    #[inline(always)]
     pub const fn from_index(index: u8) -> Rank {
         let val = index % 12;
         match val {
@@ -112,6 +141,7 @@ impl Rank {
     #[inline(always)]
     pub const fn higher_mask(self) -> u16 {
         const SUIT_MASK: u16 = 0b1111_1111_1111;
+        // This shift represents starting at the next highest rank
         let shift = (self.power_index() + 1) * Self::COPIES_PER_RANK;
 
         if shift >= 12 {
@@ -119,6 +149,20 @@ impl Rank {
         } else {
             (!0u16 << shift) & SUIT_MASK
         }
+    }
+}
+
+impl Ord for Rank {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.power_index().cmp(&other.power_index())
+    }
+}
+
+impl PartialOrd for Rank {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -130,7 +174,7 @@ pub struct Card {
 }
 
 impl Card {
-    fn new(rank: Rank, suit: Suit) -> Card {
+    pub(crate) fn new(rank: Rank, suit: Suit) -> Card {
         Card { rank, suit }
     }
 }
