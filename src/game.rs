@@ -35,7 +35,7 @@ pub struct PinochleState {
 
     // --- 5 Bytes (Control Flags) ---
     pub trump_suit: Suit,     // 0-3 (Consider 255 for "No Trump Selected Yet")
-    pub turn: Option<Player>,         // 0-3 (Whose action is it?)
+    pub turn: Player,         // 0-3 (Whose action is it?)
     pub leader: Option<Player>,       // 0-3 (Who led the current trick?)
     pub bid_winner: Option<Player>,   // 0-3 (Who won the bid? 255 if bidding in progress)
     pub phase: GamePhase,        // Enum discriminant (Bidding, Passing, Melding, Playing)
@@ -56,7 +56,7 @@ impl PinochleState {
             meld_score: [0, 0],
             current_bid: 0,
             trump_suit: Suit::Spades,
-            turn: None,
+            turn: Player::One,
             leader: None,
             bid_winner: None,
             phase: GamePhase::Bidding,
@@ -142,10 +142,26 @@ impl PinochleState {
         hand
     }
 
-    pub fn apply(&mut self, action: Action) {
+    pub fn apply(&mut self, player: Player, action: Action) -> bool {
+        if player != self.turn {
+            return false
+        }
+
         match action {
-            Action::Play(_) => {}
-            Action::Bid(_) => {}
+            Action::Play(card) => {
+                // Ensure they have the card
+                let legal_moves = self.legal_moves(self.turn);
+                if legal_moves & card.mask() == 0 {
+                    return false
+                }
+
+
+
+                true
+            }
+            Action::Bid(bid) => {
+                true
+            }
         }
     }
 }
@@ -226,6 +242,55 @@ mod game_tests {
             255, 1, 2, 3
         ];
 
-        assert_eq!(s1.legal_moves(Player::One), 0b000000000111);
+        assert_eq!(s1.legal_moves(Player::One),   s1.hands[Player::One as usize] & Suit::Spades.mask());
+        assert_eq!(s1.legal_moves(Player::Two),   s1.hands[Player::Two as usize]);
+        assert_eq!(s1.legal_moves(Player::Three), s1.hands[Player::Three as usize] & Suit::Spades.mask());
+        assert_eq!(s1.legal_moves(Player::Four),  s1.hands[Player::Four as usize] & Suit::Spades.mask());
+    }
+
+    #[test]
+    fn test_legal_moves_no_lead_suit() {
+        let mut s1 = PinochleState::new();
+        s1.hands = [
+            //  |Diamonds     |Hearts      |Clubs       |Spades
+            0b000000000111_111000000000_111000000000_000000000111, // Player::One
+            0b000000111000_000111000000_000111000000_000000000000,
+            0b000111000000_000000111000_000000111000_000111000000,
+            0b111000000000_000000000111_000000000111_111000000000  // Player:: Four
+            //47           35           23           11          0
+        ];
+
+        s1.trump_suit = Suit::Hearts;
+        s1.phase = GamePhase::TrickTaking;
+        s1.leader = Some(Player::One);
+
+        s1.trick_cards = [
+            0, 1, 2, 3
+        ];
+
+        assert_eq!(s1.legal_moves(Player::Two), s1.hands[Player::Two as usize] & s1.trump_suit.mask());
+    }
+
+    #[test]
+    fn test_legal_moves_leading_trump() {
+        let mut s1 = PinochleState::new();
+        s1.hands = [
+            //  |Diamonds     |Hearts      |Clubs       |Spades
+            0b000000000111_111000000000_111000000000_000000000111, // Player::One
+            0b000000111000_000111000000_000111000000_000000000000,
+            0b000111000000_000000111000_000000111000_000111000000,
+            0b111000000000_000000000111_000000000111_111000000000  // Player:: Four
+            //47           35           23           11          0
+        ];
+
+        s1.trump_suit = Suit::Hearts;
+        s1.phase = GamePhase::TrickTaking;
+        s1.leader = Some(Player::Three);
+
+        s1.trick_cards = [
+            34, 255, 27, 255
+        ];
+
+        assert_eq!(s1.legal_moves(Player::Four), s1.hands[Player::Four as usize] & s1.trump_suit.mask());
     }
 }
