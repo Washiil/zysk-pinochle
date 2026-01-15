@@ -367,4 +367,30 @@ mod game_tests {
 
         assert_eq!(s1.legal_moves(Player::Four), s1.hands[Player::Four as usize] & s1.trump_suit.mask());
     }
+
+    #[test]
+    fn test_score_trick() {
+        let mut s1 = PinochleState::new();
+        s1.trump_suit = Suit::Spades;
+        s1.phase = GamePhase::TrickTaking;
+        s1.leader = Some(Player::One);
+
+        s1.trick_cards = [
+            Card::new(Rank::Ace, Suit::Hearts).to_index(),
+            Card::new(Rank::Ten, Suit::Hearts).to_index(),
+            Card::new(Rank::Nine, Suit::Hearts).to_index(),
+            Card::new(Rank::Ace, Suit::Hearts).to_index()
+        ];
+
+        assert_eq!(s1.score_trick(), Some(Player::One));
+
+        s1.trick_cards = [
+            Card::new(Rank::Ace, Suit::Hearts).to_index(),
+            Card::new(Rank::Ten, Suit::Hearts).to_index(),
+            Card::new(Rank::Nine, Suit::Hearts).to_index(),
+            Card::new(Rank::Ace, Suit::Spades).to_index()
+        ];
+
+        assert_eq!(s1.score_trick(), Some(Player::Four));
+    }
 }
