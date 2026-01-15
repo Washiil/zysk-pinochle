@@ -1,5 +1,5 @@
 use crate::game::PinochleState;
-use crate::types::{Action, Card, GamePhase, Player};
+use crate::types::{Action, Card, GamePhase, Player, Suit};
 use rand::Rng;
 
 pub trait Agent {
@@ -52,6 +52,10 @@ impl Agent for RandomAgent {
             }
             GamePhase::TrickTaking => {
                 let legal_moves = state.legal_moves(state.turn);
+                for i in 0..4 {
+                    let chunk = (legal_moves >> 12 * i) & 0xFFF; // Mask lowest 12 bits
+                    println!("{:?}:\t {:012b}", Suit::from_index(i * 12), chunk);
+                }
 
                 if legal_moves == 0 {
                     panic!("This is undefined and unreachable behavior.")

@@ -205,7 +205,7 @@ impl PinochleState {
         Some(winning_player)
     }
 
-    fn finaliz_hand(&mut self) {
+    fn finalize_hand(&mut self) {
         let Some(bid_winner) = self.bid_winner else {
             return;
         };
@@ -267,10 +267,20 @@ impl PinochleState {
                     return false
                 }
 
+                self.hands[player as usize] &= !card.mask();
                 self.trick_cards[player as usize] = card.to_index();
 
-                if self.trick_cards.iter().all(|&x| x == 255) {
-                    // Score trick and reset
+                // Check if trick is complete
+                if self.trick_cards.iter().all(|&x| x != 255) {
+                    self.score_trick();
+
+                    // Check if hand is finished (12 tricks played)
+                    if self.tricks_played >= 12 {
+                        self.phase = GamePhase::Finished;
+                        self.finalize_hand();
+                    }
+                } else {
+                    self.turn = Player::from_usize((player as usize + 1) % 4).unwrap();
                 }
 
                 true

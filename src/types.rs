@@ -34,7 +34,7 @@ pub enum GamePhase {
 pub enum Action {
     /// Play a card (0..47)
     Play(Card),
-    /// Place a Bid
+    /// Place a Bid (need to add a suit here as well)
     Bid(u16),
 }
 

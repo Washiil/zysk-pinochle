@@ -1,4 +1,4 @@
 pub mod game;
 pub mod agent;
-mod types;
+pub mod types;
 mod meld;
