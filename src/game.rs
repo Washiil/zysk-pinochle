@@ -27,7 +27,7 @@ pub struct PinochleState {
     // --- 4 Bytes ---
     // Meld points declared at start of hand.
     // Changed to i16 because meld can exceed 255 (e.g., 300 for Double Marriage).
-    pub meld_score: [i16; 2],
+    pub meld_score: [u16; 2],
 
     // --- 2 Bytes ---
     // The winning bid amount (e.g., 50, 60, ... 500)
@@ -88,10 +88,17 @@ impl PinochleState {
     /// Computes the legal moves for a given game state
     pub fn legal_moves(&self, turn: Player) -> u64 {
         if self.phase == GamePhase::Bidding {
+            dbg!("No legal moves in bidding phase");
+            return 0;
+        }
+
+        if self.trick_points[turn as usize] != 255 {
+            dbg!("Player has already played a card");
             return 0;
         }
 
         let Some(leader) = self.leader else {
+            dbg!("There must be a leader to start the trick");
             return 0;
         };
 
@@ -142,6 +149,69 @@ impl PinochleState {
         hand
     }
 
+    fn score_trick(&mut self) -> Option<Player> {
+        let start_player = self.leader?;
+        let start_index = start_player as usize;
+
+        let lead_card = self.trick_cards[start_index];
+        let mut best_suit = Suit::from_index(lead_card);
+        let mut best_rank = Rank::from_index(lead_card);
+
+        let mut winning_player = start_player;
+        let mut points = 0;
+
+        for i in 1..=3 {
+            let current_index = (start_index + i) % 4;
+            let card = self.trick_cards[current_index];
+
+            let suit = Suit::from_index(card);
+            let rank = Rank::from_index(card);
+
+            if card % 12 > 6 { points += 1 }
+
+            let is_trump = suit == self.trump_suit;
+            let best_is_trump = best_suit == self.trump_suit;
+
+            // First trump card being played
+            if is_trump && !best_is_trump {
+                best_suit = suit;
+                best_rank = rank;
+                winning_player = Player::from_usize(current_index).unwrap();
+            }
+            // Check if it beats current rank
+            else if suit == best_suit {
+                if rank > best_rank {
+                    best_rank = rank;
+                    winning_player = Player::from_usize(current_index).unwrap();
+                }
+            }
+
+            self.trick_cards[current_index] = 255;
+        }
+
+        let team_idx= (winning_player as usize) % 2;
+
+        self.trick_points[team_idx] += points;
+
+        self.trick_cards[start_index] = 255;
+        self.leader = Some(winning_player);
+        Some(winning_player)
+    }
+
+    ///
+    ///
+    /// # Arguments
+    ///
+    /// * `player`: Player whom the action is being performed by
+    /// * `action`: The action being taken
+    ///
+    /// returns: bool
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn apply(&mut self, player: Player, action: Action) -> bool {
         if player != self.turn {
             return false
@@ -155,7 +225,11 @@ impl PinochleState {
                     return false
                 }
 
+                self.trick_cards[player as usize] = card.to_index();
 
+                if self.trick_cards.iter().all(|&x| x == 255) {
+                    // Score trick and reset
+                }
 
                 true
             }

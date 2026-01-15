@@ -58,3 +58,8 @@ pub trait Agent {
 ```
 
 This leaves complexity completely in the hand of the implementor. 
+
+```
+//        [               [Turn index  ] [48 Cards seperated by Suit                         ]
+let game = 00000000000000_[00]           [000000000000_000000000000_000000000000_000000000000;
+```

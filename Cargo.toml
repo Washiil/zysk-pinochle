@@ -9,3 +9,4 @@ rayon = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
 rand_xoshiro = "0.6.0"
 smallvec = "2.0.0-alpha.12"
+log = "0.4.29"

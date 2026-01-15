@@ -9,6 +9,18 @@ pub enum Player {
     Four = 3,
 }
 
+impl Player {
+    pub fn from_usize(n: usize) -> Option<Player> {
+        match n {
+            0 => Some(Player::One),
+            1 => Some(Player::Two),
+            2 => Some(Player::Three),
+            3 => Some(Player::Four),
+            _ => None,
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GamePhase {
@@ -174,8 +186,22 @@ pub struct Card {
 }
 
 impl Card {
-    pub(crate) fn new(rank: Rank, suit: Suit) -> Card {
+    pub fn new(rank: Rank, suit: Suit) -> Card {
         Card { rank, suit }
+    }
+
+    pub fn from_index(index: u8) -> Card {
+        let suit = Suit::from_index(index);
+        let rank = Rank::from_index(index);
+        Self { rank, suit }
+    }
+
+    pub fn to_index(self) -> u8 {
+        (self.suit.index() * 12 + self.rank.power_index()) as u8
+    }
+
+    pub fn mask(self) -> u64 {
+        self.rank.global_mask() & self.suit.mask()
     }
 }
 
