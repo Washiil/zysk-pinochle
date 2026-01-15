@@ -47,7 +47,7 @@ impl Agent for RandomAgent {
                     } else {
                         state.current_bid + 5
                     };
-                    Action::Bid(min_bid as u8)
+                    Action::Bid(min_bid)
                 }
             }
             GamePhase::TrickTaking => {

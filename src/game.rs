@@ -40,8 +40,10 @@ pub struct PinochleState {
     pub bid_winner: Option<Player>,   // 0-3 (Who won the bid? 255 if bidding in progress)
     pub phase: GamePhase,        // Enum discriminant (Bidding, Passing, Melding, Playing)
 
+    pub tricks_played: u8,
+
     // --- Remaining Bytes ---
-    // 9 bytes of padding automatically added here to reach 64-byte alignment
+    // 8 bytes of padding automatically added here to reach 64-byte alignment
 }
 
 impl PinochleState {
@@ -60,6 +62,7 @@ impl PinochleState {
             leader: None,
             bid_winner: None,
             phase: GamePhase::Bidding,
+            tricks_played: 0,
         }
     }
 
@@ -118,7 +121,7 @@ impl PinochleState {
         let mut trump_to_beat = Rank::Nine;
 
         // Calculating highest trump played
-        for i in self.trick_cards {
+        for &i in &self.trick_cards {
             // Ignore unplayed cards
             if i == 255 { continue; }
             let played_suit = Suit::from_index(i);
@@ -160,6 +163,10 @@ impl PinochleState {
         let mut winning_player = start_player;
         let mut points = 0;
 
+        if lead_card % 12 >= 6 {
+            points += 1;
+        }
+
         for i in 1..=3 {
             let current_index = (start_index + i) % 4;
             let card = self.trick_cards[current_index];
@@ -185,17 +192,52 @@ impl PinochleState {
                     winning_player = Player::from_usize(current_index).unwrap();
                 }
             }
-
-            self.trick_cards[current_index] = 255;
         }
 
-        let team_idx= (winning_player as usize) % 2;
-
+        let team_idx = (winning_player as usize) % 2;
         self.trick_points[team_idx] += points;
 
-        self.trick_cards[start_index] = 255;
+        self.trick_cards = [255; 4];
         self.leader = Some(winning_player);
+        self.turn = winning_player;
+        self.tricks_played += 1;
+
         Some(winning_player)
+    }
+
+    fn finaliz_hand(&mut self) {
+        let Some(bid_winner) = self.bid_winner else {
+            return;
+        };
+
+        let bidding_team = (bid_winner as usize) % 2;
+        let defending_team = 1 - bidding_team;
+
+        self.trick_points[self.leader.unwrap() as usize % 2] += 1;
+        let total_points = self.meld_score[bidding_team] + self.trick_points[bidding_team];
+
+        if total_points >= self.current_bid {
+            // Made the bid
+            self.scores[bidding_team] += total_points as i16;
+        } else {
+            // In the hole
+            self.scores[bidding_team] -= self.current_bid as i16;
+        }
+        self.scores[defending_team] += (self.meld_score[defending_team] + self.trick_points[defending_team]) as i16;
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.phase == GamePhase::Finished
+    }
+
+    pub fn winning_team(&self) -> Option<usize> {
+        if self.scores[0] >= 200 {
+            Some(0)
+        } else if self.scores[1] >= 200 {
+            Some(1)
+        } else {
+            None
+        }
     }
 
     ///
@@ -234,9 +276,41 @@ impl PinochleState {
                 true
             }
             Action::Bid(bid) => {
+                if self.phase != GamePhase::Bidding {
+                    return false
+                };
+
+                if bid == 0 {
+                    // Get the next player
+                    self.turn = Player::from_usize((player as usize + 1) % 4).unwrap();
+                    return true;
+                }
+
+                let min_bid = if self.current_bid == 0 { 15 } else { self.current_bid + 5 };
+                if bid < min_bid || bid > 250 || bid % 5 != 0 {
+                    return false;
+                }
+
+                self.current_bid = bid;
+                self.bid_winner = Some(player);
+                self.turn = Player::from_usize((player as usize + 1) % 4).unwrap();
+
+                // Simple bidding: after one round, start trick-taking
+                if self.turn == Player::One && self.bid_winner.is_some() {
+                    self.phase = GamePhase::TrickTaking;
+                    self.turn = self.bid_winner.unwrap();
+                    self.leader = Some(self.turn);
+                }
+
                 true
             }
         }
+    }
+}
+
+impl Default for PinochleState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

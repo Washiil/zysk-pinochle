@@ -35,7 +35,7 @@ pub enum Action {
     /// Play a card (0..47)
     Play(Card),
     /// Place a Bid
-    Bid(u8),
+    Bid(u16),
 }
 
 #[repr(u8)]
