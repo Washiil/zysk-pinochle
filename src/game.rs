@@ -92,7 +92,7 @@ impl PinochleState {
             return 0;
         }
 
-        if self.trick_points[turn as usize] != 255 {
+        if self.trick_cards[turn as usize] != 255 {
             dbg!("Player has already played a card");
             return 0;
         }
