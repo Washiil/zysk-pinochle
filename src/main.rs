@@ -101,7 +101,7 @@ fn run_game(agents: &mut [Box<dyn Agent>; 4]) {
     println!("Team 2 (Players 2 & 4): {} points", state.scores[1]);
 
     if let Some(winner) = state.winning_team() {
-        println!("\n🏆 Team {} wins!", winner + 1);
+        println!("\nTeam {} wins!", winner + 1);
     } else {
         println!("\nGame ended without a winner (200+ points needed)");
     }
