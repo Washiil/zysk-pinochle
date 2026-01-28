@@ -84,7 +84,7 @@ fn run_game(agents: &mut [Box<dyn Agent>; 4]) {
             && move_count > 0
         {
             println!(
-                "  → Player {} wins the trick!",
+                "  -> Player {} wins the trick!",
                 (state.turn as usize) + 1
             );
             println!("Tricks Played: {}", state.tricks_played)

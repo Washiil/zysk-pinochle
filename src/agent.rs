@@ -51,11 +51,17 @@ impl Agent for RandomAgent {
                 }
             }
             GamePhase::TrickTaking => {
+                for i in 0..4 {
+                    let chunk = (state.hands[state.turn as usize] >> 12 * i) & 0xFFF; // Mask lowest 12 bits
+                    print!("Real: {:?}: {:012b} / ", Suit::from_index(i * 12), chunk);
+                }
+                println!();
                 let legal_moves = state.legal_moves(state.turn);
                 for i in 0..4 {
                     let chunk = (legal_moves >> 12 * i) & 0xFFF; // Mask lowest 12 bits
-                    println!("{:?}:\t {:012b}", Suit::from_index(i * 12), chunk);
+                    print!("Legal: {:?}: {:012b} / ", Suit::from_index(i * 12), chunk);
                 }
+                println!();
 
                 if legal_moves == 0 {
                     panic!("This is undefined and unreachable behavior.")
