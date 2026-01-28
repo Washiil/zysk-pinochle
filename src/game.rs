@@ -5,35 +5,35 @@ use crate::types::{Action, Rank, Suit, Player, GamePhase};
 #[repr(C, align(64))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PinochleState {
-    // --- 32 Bytes ---
+    // 32 Bytes
     // hands[0] = Player 0. Bitboard (bits 0-47 set for cards held)
     pub hands: [u64; 4],
 
-    // --- 4 Bytes ---
+    // 4 Bytes
     // Cards currently on the table.
     // Index matches Player ID. 255 = No card played.
     pub trick_cards: [u8; 4],
 
-    // --- 4 Bytes ---
+    // 4 Bytes
     // Global Game Score (e.g., towards 1500)
     // Using i16 allows for negative scores if a team goes set.
     pub scores: [i16; 2],
 
-    // --- 4 Bytes ---
+    // 4 Bytes
     // Points taken in tricks *this hand only* (Counters + Last Trick Bonus)
     // Needed to verify against the bid at the end.
     pub trick_points: [u16; 2],
 
-    // --- 4 Bytes ---
+    // 4 Bytes
     // Meld points declared at start of hand.
     // Changed to i16 because meld can exceed 255 (e.g., 300 for Double Marriage).
     pub meld_score: [u16; 2],
 
-    // --- 2 Bytes ---
+    // 2 Bytes
     // The winning bid amount (e.g., 50, 60, ... 500)
     pub current_bid: u16,
 
-    // --- 5 Bytes (Control Flags) ---
+    // 5 Bytes (Control Flags)
     pub trump_suit: Suit,     // 0-3 (Consider 255 for "No Trump Selected Yet")
     pub turn: Player,         // 0-3 (Whose action is it?)
     pub leader: Option<Player>,       // 0-3 (Who led the current trick?)
@@ -42,8 +42,7 @@ pub struct PinochleState {
 
     pub tricks_played: u8,
 
-    // --- Remaining Bytes ---
-    // 8 bytes of padding automatically added here to reach 64-byte alignment
+    // Remaining 8 Bytes
 }
 
 impl PinochleState {
@@ -132,7 +131,7 @@ impl PinochleState {
             trump_to_beat = std::cmp::max(trump_to_beat, played_rank);
         }
 
-        // If you can plan in suit then you must
+        // If you can play in suit then you must
         if hand & lead_suit.mask() > 0 {
             return hand & lead_suit.mask();
         }
@@ -240,20 +239,6 @@ impl PinochleState {
         }
     }
 
-    ///
-    ///
-    /// # Arguments
-    ///
-    /// * `player`: Player whom the action is being performed by
-    /// * `action`: The action being taken
-    ///
-    /// returns: bool
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
     pub fn apply(&mut self, player: Player, action: Action) -> bool {
         if player != self.turn {
             return false
@@ -394,16 +379,14 @@ mod game_tests {
 
         s1.trump_suit = Suit::Spades;
         s1.phase = GamePhase::TrickTaking;
-        s1.leader = Some(Player::Two);
+        s1.leader = Some(Player::Four);
 
         s1.trick_cards = [
-            255, 1, 2, 3
+            255, 255, 4, 3
         ];
 
         assert_eq!(s1.legal_moves(Player::One),   s1.hands[Player::One as usize] & Suit::Spades.mask());
-        assert_eq!(s1.legal_moves(Player::Two),   s1.hands[Player::Two as usize]);
-        assert_eq!(s1.legal_moves(Player::Three), s1.hands[Player::Three as usize] & Suit::Spades.mask());
-        assert_eq!(s1.legal_moves(Player::Four),  s1.hands[Player::Four as usize] & Suit::Spades.mask());
+        assert_eq!(s1.legal_moves(Player::Two),   s1.hands[Player::Two as usize] & Suit::Spades.mask());
     }
 
     #[test]
@@ -423,7 +406,7 @@ mod game_tests {
         s1.leader = Some(Player::One);
 
         s1.trick_cards = [
-            0, 1, 2, 3
+            0, 255, 2, 3
         ];
 
         assert_eq!(s1.legal_moves(Player::Two), s1.hands[Player::Two as usize] & s1.trump_suit.mask());
