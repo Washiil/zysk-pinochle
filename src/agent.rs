@@ -1,5 +1,5 @@
 use crate::game::PinochleState;
-use crate::types::{Action, Card, GamePhase, Player, Suit};
+use crate::types::{Action, Card, GamePhase, Player};
 use rand::Rng;
 
 pub trait Agent {
@@ -51,30 +51,21 @@ impl Agent for RandomAgent {
                 }
             }
             GamePhase::TrickTaking => {
-                for i in 0..4 {
-                    let chunk = (state.hands[state.turn as usize] >> 12 * i) & 0xFFF; // Mask lowest 12 bits
-                    print!("Real: {:?}: {:012b} / ", Suit::from_index(i * 12), chunk);
-                }
-                println!();
                 let legal_moves = state.legal_moves(state.turn);
-                for i in 0..4 {
-                    let chunk = (legal_moves >> 12 * i) & 0xFFF; // Mask lowest 12 bits
-                    print!("Legal: {:?}: {:012b} / ", Suit::from_index(i * 12), chunk);
-                }
-                println!();
 
                 if legal_moves == 0 {
                     panic!("This is undefined and unreachable behavior.")
                 } else {
-                    // Select random legal move
-                    let mut moves = Vec::with_capacity(12);
-                    for i in 0..48 {
-                        if legal_moves & (1u64 << i) != 0 {
-                            moves.push(i);
-                        }
+                    // Select random legal move, use SmallVec & fast counting to avoid heap alloc 
+                    let mut moves = smallvec::SmallVec::<u8, 12>::new();
+                    let mut remaining = legal_moves;
+                    while remaining != 0 {
+                        let bit = remaining.trailing_zeros();
+                        moves.push(bit as u8);
+                        remaining &= remaining - 1; // Clear lowest bit
                     }
 
-                    let card_index = moves[self.rng.random_range(0..moves.len())] as u8;
+                    let card_index = moves[self.rng.random_range(0..moves.len())];
                     Action::Play(Card::from_index(card_index))
                 }
             }
@@ -87,7 +78,6 @@ impl Agent for RandomAgent {
 
     fn on_game_over(&mut self, _final_state: &PinochleState) {
         // Random agent has no learning
-        dbg!("Random Agent knows the game is over");
     }
 
     fn name(&self) -> &str {
