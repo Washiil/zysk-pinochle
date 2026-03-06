@@ -1,5 +1,16 @@
 use std::cmp::Ordering;
 
+pub const UNPLAYED_CARD_INDEX: u8 = 255;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum GameError {
+    NotPlayerTurn,
+    CardNotLegalPlay,
+    InvalidBidAmount,
+    PhaseMismatch,
+    InvalidPlayerIndex,
+}
+
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Player {
@@ -9,14 +20,16 @@ pub enum Player {
     Four = 3,
 }
 
-impl Player {
-    pub fn from_usize(n: usize) -> Option<Player> {
+impl TryFrom<usize> for Player {
+    type Error = GameError;
+
+    fn try_from(n: usize) -> Result<Player, Self::Error> {
         match n {
-            0 => Some(Player::One),
-            1 => Some(Player::Two),
-            2 => Some(Player::Three),
-            3 => Some(Player::Four),
-            _ => None,
+            0 => Ok(Player::One),
+            1 => Ok(Player::Two),
+            2 => Ok(Player::Three),
+            3 => Ok(Player::Four),
+            _ => Err(GameError::InvalidPlayerIndex),
         }
     }
 }
