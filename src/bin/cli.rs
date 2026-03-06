@@ -1,7 +1,3 @@
-//! Command-line interface for Pinochle bot simulation and benchmarking.
-
-use std::time::Instant;
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
