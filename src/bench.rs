@@ -1,12 +1,11 @@
 use crate::player::{Player, RandomPlayer};
 use crate::rules::apply_action;
-use crate::state::new_hand;
+use crate::state::{new_hand, GameState};
 use crate::types::{Action, Phase};
 use std::hint::black_box;
 
-pub fn simulate_one_game() {
-    let players: [&dyn Player; 4] = [&RandomPlayer, &RandomPlayer, &RandomPlayer, &RandomPlayer];
-    let mut state = black_box(new_hand());
+pub fn run_game(players: &[&dyn Player; 4]) -> GameState {
+    let mut state = new_hand();
 
     while state.phase == Phase::Bidding {
         let player = players[state.turn as usize];
@@ -20,6 +19,12 @@ pub fn simulate_one_game() {
         state = apply_action(state, Action::Play(card));
     }
 
+    state
+}
+
+pub fn simulate_one_game() {
+    let players: [&dyn Player; 4] = [&RandomPlayer, &RandomPlayer, &RandomPlayer, &RandomPlayer];
+    let state = black_box(run_game(&players));
     black_box(state);
 }
 
