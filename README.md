@@ -1,65 +1,98 @@
 # Zysk Pinochle
-Zysk, meaning profit in Polish, is meant to provide an extremely high performance 
-implementation of the card game pinochle. Note that because the game of Pinochle 
-has so many variations both official and personal I have chosen to arbitrarily 
-implement the version I've played my whole life.
 
-## Performance Considerations
-### Bitboards
-Bit boards are the most critical enhancement as we are dealing with a 48 card deck that fits nicely into a `u64`.
+High performance pinochle card game engine. Data-oriented design with bitset based
+game state for cache locality and SIMD-friendly state transitions.
 
-Additionally, this allows us to make use of bit masks when calculating meld, valid moves, and scoring.
+## Motivation
 
-A deck representation can be understood from the following:
+Most card game engines use object-oriented designs where cards, hands, and players
+own mutable state. This scatters game data across the heap and defeats the cache.
+Zysk Pinochle takes the opposite approach: the entire game state lives in a single
+64-byte struct aligned to a cache line. Every operation is a pure function that
+takes a `GameState` by value and returns a new one. This means millions of game
+states can sit contiguously in a `Vec`, enabling MCTS and other tree-search
+algorithms to run with excellent spatial locality.
+
+## Features
+
+- **48-card deck in a u64 bitboard**. Each card is one bit. Hands, legal moves,
+  and trick cards are all bitwise operations. No heap allocations in hot paths.
+
+- **64-byte GameState**. One cache line. Copying a full game state is a single
+  SIMD move. Fields are laid out with `#[repr(C, align(64))]`.
+
+- **Pure function state machine**. `apply_action(state, action) -> GameState`.
+  No mutation through references. Every state transition produces a new state,
+  making the engine trivially parallelizable.
+
+- **Lookup-table meld evaluation**. Per-suit 12-bit patterns mapped to meld
+  scores via precomputed 4096-entry tables. Zero branching during scoring.
+
+- **Swappable players**. The `Player` trait takes `&self` (not `&mut self`).
+  `RandomPlayer` is a zero-sized type. Future agents can store shared
+  parameters behind `&self` for lock-free parallel simulation.
+
+- **Rayon parallelism**. Benchmark harness runs games in parallel across all
+  cores.
+
+## Performance
+
+Benchmarks Coming Soon
+
+## Bit Layout
+
+The u64 bitboard is partitioned into four 12-bit suit blocks:
+
 ```
-// I am ommiting the 16 unused bits at the front of the deck
-Deck:   | 000000000000_000000000000_000000000000_000000000000 |
-Suits:  | DDDDDDDDDDDD_HHHHHHHHHHHH_CCCCCCCCCCCC_SSSSSSSSSSSS |
-Ranks:  | AATTKKQQJJ99_AATTKKQQJJ99_AATTKKQQJJ99_AATTKKQQJJ99 |
+Bit:  47 ... 36 | 35 ... 24 | 23 ... 12 | 11 ... 0
+      Diamonds  |  Hearts   |  Clubs    | Spades
 ```
 
-The main downside to this approach is that logic can become ambiguous to someone
-unfamiliar with the codebase. Importantly consider there are 12 cards per suit and
-8 cards per rank. 
+Within each 12-bit suit block, 2 bits per rank:
 
-### Cache Line Consideration
-In an effort to ensure we squeeze an unresonable amount of performance from this
-program I decided to ensure the game object itself remains in a single 64 byte cache line.
-This ensures we avoid invalidation and allow for single clock reads.
+```
+Bit:  11 10 | 9  8 | 7  6 | 5  4 | 3  2 | 1  0
+      A  A  | 10 10| K  K | Q  Q | J  J | 9  9
+```
+
+Card index (0-47): `index = suit * 12 + rank * 2 + copy`
+
+This encoding makes suit extraction (`index / 12`), rank extraction
+(`(index % 12) / 2`), and mask generation (`1u64 << index`) all compile
+to single instructions via strength reduction.
+
+## Player Trait
 
 ```rust
-pub struct PinochleState {
-    pub hands: [u64; 4],      // 8 * 4 = 32
-    pub dead_cards: [u64; 2], // 8 * 2 = 16
-    pub trick_cards: [u8; 4], // 1 * 4 = 4
-    pub scores: [u16; 2],     // 2 * 2 = 4
-    pub trump_suit: Suit,     // 1 * 1 = 1
-    pub turn: u8,             // 1 * 1 = 1
-    pub leader: u8,           // 1 * 1 = 1
-    
-    pub _padding: [u8; 5],    // 1 * 5 = 5
+pub trait Player {
+    fn bid(&self, state: &GameState) -> u16;
+    fn play(&self, state: &GameState) -> u8;
 }
 ```
 
-Luckily for me, Pinochle is not an incredibly complicated game. By restricting 
-the memory footprint I ensure that I only consider the game to contain necessary logic
-and I get the added benefit of blazingly fast performance.
+No `&mut self`. `RandomPlayer` is a zero-sized type. For tree-search agents,
+the search tree lives in a flat `Vec<GameState>` external to the player,
+and the player only holds shared references to learned parameters.
 
-### Agents
-The intention is for agents was to have an extremely minimal required implementation.
+## Usage
 
 ```rust
-pub trait Agent {
-    fn bid(&mut self, state: &PinochleState) -> u8;
-    fn play(&mut self, state: &PinochleState) -> u8;
-    fn game_over(&mut self, _final_state: &PinochleState) {}
-    fn name(&self) -> &str { "Unknown Agent" }
+use zysk_pinochle::{new_hand, apply_action, is_hand_over, Action, Phase, Player, RandomPlayer};
+
+let players: [&dyn Player; 4] = [&RandomPlayer; 4];
+let mut state = new_hand();
+
+// Bidding
+while state.phase == Phase::Bidding {
+    let bid = players[state.turn as usize].bid(&state);
+    state = apply_action(state, Action::Bid(bid));
 }
-```
 
-This leaves complexity completely in the hand of the implementor. 
+// Trick taking
+while !is_hand_over(&state) {
+    let card = players[state.turn as usize].play(&state);
+    state = apply_action(state, Action::Play(card));
+}
 
-```
-//        [               [Turn index  ] [48 Cards seperated by Suit                         ]
-let game = 00000000000000_[00]           [000000000000_000000000000_000000000000_000000000000;
+println!("Scores: {:?}", state.scores);
 ```
