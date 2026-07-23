@@ -11,6 +11,8 @@ pub fn card_points(rank: Rank) -> u8 {
 }
 
 pub fn legal_moves(state: &GameState) -> u64 {
+    debug_assert!(state.phase == Phase::TrickTaking, "legal_moves called outside TrickTaking");
+
     let hand = state.hands[state.turn as usize];
 
     // Leading player: any card in hand is legal
@@ -19,6 +21,8 @@ pub fn legal_moves(state: &GameState) -> u64 {
     }
 
     let lead_card_index = state.trick_cards[state.leader as usize];
+    debug_assert!(lead_card_index != NO_CARD, "leader has not played a card yet");
+
     let lead_suit = Suit::from_index(lead_card_index);
 
     // Must follow suit if possible
@@ -113,6 +117,10 @@ pub fn evaluate_trick(state: &GameState) -> (u8, u16) {
 }
 
 pub fn apply_play(mut state: GameState, card_index: u8) -> GameState {
+    debug_assert!(state.phase == Phase::TrickTaking, "apply_play called outside TrickTaking phase");
+    debug_assert!(card_index < 48, "card_index {} out of range 0-47", card_index);
+    debug_assert!(state.hands[state.turn as usize] & card::card_mask(card_index) != 0, "card {} not in player {} hand", card_index, state.turn);
+
     let mask = card::card_mask(card_index);
     state.hands[state.turn as usize] &= !mask;
     state.trick_cards[state.turn as usize] = card_index;
@@ -152,11 +160,14 @@ pub fn is_legal_bid(state: &GameState, bid: u16) -> bool {
     if bid == 0 {
         true // Always can pass
     } else {
-        bid >= min_bid(state) && bid % 5 == 0
+        bid >= min_bid(state) && bid <= 250 && bid % 5 == 0
     }
 }
 
 pub fn apply_bid(mut state: GameState, bid: u16) -> GameState {
+    debug_assert!(state.phase == Phase::Bidding, "apply_bid called outside Bidding phase");
+    debug_assert!(bid == 0 || (bid <= 250 && bid % 5 == 0), "invalid bid {}", bid);
+
     if bid == 0 {
         state.pass_count += 1;
         // All 4 pass with no bid: redeal
@@ -203,6 +214,7 @@ pub fn is_hand_over(state: &GameState) -> bool {
 }
 
 pub fn finalize_hand(mut state: GameState) -> GameState {
+    debug_assert!(state.declarer != NO_PLAYER, "finalize_hand called with no declarer");
     // Meld was pre-computed at the bidding→trick transition (apply_bid).
     // Add trick points + meld to total scores
     for t in 0..2 {
@@ -420,6 +432,7 @@ mod tests {
         state.turn = 0;
         state.leader = 0;
         state.trump_suit = Suit::Spades;
+        state.declarer = 0; // Must be set for finalize_hand
 
         // Play all 12 tricks (48 cards)
         for _trick in 0..12 {
