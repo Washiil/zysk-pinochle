@@ -167,6 +167,13 @@ pub fn apply_bid(mut state: GameState, bid: u16) -> GameState {
         if state.pass_count >= 3 && state.current_bid > 0 {
             state.phase = Phase::TrickTaking;
             state.trump_suit = Suit::Spades; // scaffold: default trump
+            // Compute meld from hands before trick-taking begins
+            state.meld_scores[0] = 0;
+            state.meld_scores[1] = 0;
+            for p in 0..4 {
+                let meld = compute_player_meld(state.hands[p], state.trump_suit);
+                state.meld_scores[team(p as u8)] += meld;
+            }
             // Player to left of declarer leads the first trick
             state.turn = (state.declarer + 1) % 4;
             state.leader = state.turn;
@@ -196,12 +203,7 @@ pub fn is_hand_over(state: &GameState) -> bool {
 }
 
 pub fn finalize_hand(mut state: GameState) -> GameState {
-    // Compute and add meld scores
-    for p in 0..4 {
-        let meld = compute_player_meld(state.hands[p], state.trump_suit);
-        state.meld_scores[team(p as u8)] += meld;
-    }
-
+    // Meld was pre-computed at the bidding→trick transition (apply_bid).
     // Add trick points + meld to total scores
     for t in 0..2 {
         let total = state.trick_points[t] + state.meld_scores[t];
