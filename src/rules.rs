@@ -76,6 +76,7 @@ pub fn evaluate_trick(state: &GameState) -> (u8, u16) {
     let mut winner = leader;
     let mut best_rank = Rank::from_index(lead_card);
     let mut best_is_trump = lead_suit == trump;
+    let mut best_is_lead = true;
 
     let mut points = 0u16;
 
@@ -84,24 +85,22 @@ pub fn evaluate_trick(state: &GameState) -> (u8, u16) {
         let card_rank = Rank::from_index(card_idx);
         let card_suit = Suit::from_index(card_idx);
         let is_trump = card_suit == trump;
+        let is_lead = card_suit == lead_suit;
         points += card_points(card_rank) as u16;
 
-        // Determine if this card beats the current winner
-        let beats = if is_trump && !best_is_trump {
-            true
-        } else if is_trump && best_is_trump {
-            card_rank > best_rank
-        } else if !is_trump && best_is_trump {
-            false
+        let beats = if is_trump {
+            !best_is_trump || card_rank > best_rank
+        } else if is_lead {
+            !best_is_trump && (!best_is_lead || card_rank > best_rank)
         } else {
-            // Both follow lead suit
-            card_rank > best_rank
+            false
         };
 
         if beats {
             winner = p;
             best_rank = card_rank;
             best_is_trump = is_trump;
+            best_is_lead = is_lead;
         }
     }
 
