@@ -26,9 +26,8 @@ pub const fn team(player: u8) -> usize {
 }
 
 pub fn new_hand() -> GameState {
-    let hands = deal();
-    GameState {
-        hands,
+    let mut state = GameState {
+        hands: [0; 4],
         trick_cards: [NO_CARD; 4],
         scores: [0, 0],
         trick_points: [0, 0],
@@ -41,7 +40,28 @@ pub fn new_hand() -> GameState {
         phase: Phase::Bidding,
         tricks_played: 0,
         pass_count: 0,
-    }
+    };
+    reset_hand(&mut state);
+    state.scores = [0, 0]; // reset_hand preserves scores; new_hand does not
+    state
+}
+
+/// Resets all hand-specific fields in-place for a new deal.
+/// Preserves `scores` so multi-hand games accumulate correctly.
+/// The struct stays at its current address for cache residency.
+pub fn reset_hand(state: &mut GameState) {
+    state.hands = deal();
+    state.trick_cards = [NO_CARD; 4];
+    state.trick_points = [0, 0];
+    state.meld_scores = [0, 0];
+    state.current_bid = 0;
+    state.trump_suit = Suit::Spades;
+    state.turn = 0;
+    state.leader = NO_PLAYER;
+    state.declarer = NO_PLAYER;
+    state.phase = Phase::Bidding;
+    state.tricks_played = 0;
+    state.pass_count = 0;
 }
 
 pub fn deal() -> [u64; 4] {
