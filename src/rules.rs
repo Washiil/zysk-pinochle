@@ -170,9 +170,12 @@ pub fn apply_bid(mut state: GameState, bid: u16) -> GameState {
 
     if bid == 0 {
         state.pass_count += 1;
-        // All 4 pass with no bid: redeal
+        // All 4 pass with no bid: redeal (preserve accumulated scores)
         if state.pass_count >= 4 && state.current_bid == 0 {
-            return crate::state::new_hand();
+            let scores = state.scores;
+            let mut new_state = crate::state::new_hand();
+            new_state.scores = scores;
+            return new_state;
         }
         // 3 consecutive passes after a non-zero bid ends bidding
         if state.pass_count >= 3 && state.current_bid > 0 {
@@ -194,7 +197,6 @@ pub fn apply_bid(mut state: GameState, bid: u16) -> GameState {
     } else {
         state.current_bid = bid;
         state.declarer = state.turn;
-        state.bidder_index = state.turn;
         state.pass_count = 0;
         state.turn = (state.turn + 1) % 4;
     }

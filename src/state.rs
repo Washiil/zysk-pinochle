@@ -17,7 +17,6 @@ pub struct GameState {
     pub declarer: u8,
     pub phase: Phase,
     pub tricks_played: u8,
-    pub bidder_index: u8,
     pub pass_count: u8,
 }
 
@@ -41,7 +40,6 @@ pub fn new_hand() -> GameState {
         declarer: NO_PLAYER,
         phase: Phase::Bidding,
         tricks_played: 0,
-        bidder_index: 0,
         pass_count: 0,
     }
 }

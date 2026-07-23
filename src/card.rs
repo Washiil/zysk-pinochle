@@ -5,11 +5,6 @@ pub const fn card_mask(index: u8) -> u64 {
     1u64 << (index as u64)
 }
 
-#[inline(always)]
-pub const fn index_to_copy(index: u8) -> u8 {
-    index & 1
-}
-
 pub struct CardIter {
     bits: u64,
 }
@@ -64,14 +59,6 @@ mod tests {
             assert_eq!(mask.count_ones(), 1);
             assert_eq!(mask.trailing_zeros() as u8, i);
         }
-    }
-
-    #[test]
-    fn test_index_to_copy() {
-        assert_eq!(index_to_copy(0), 0);
-        assert_eq!(index_to_copy(1), 1);
-        assert_eq!(index_to_copy(2), 0);
-        assert_eq!(index_to_copy(47), 1);
     }
 
     #[test]
