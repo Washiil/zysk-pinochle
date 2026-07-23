@@ -25,7 +25,7 @@ fn count_rank(bits: u16, rank: Rank) -> u8 {
     let mask = Rank::relative_mask(rank);
     let masked = bits & mask;
     let shift = rank.power_index() * 2;
-    (masked >> shift) as u8
+    (masked >> shift).count_ones() as u8
 }
 
 fn compute_suit_meld(bits: u16, is_trump: bool) -> u16 {
@@ -167,5 +167,15 @@ mod tests {
             | card::card_mask(34)  // Ace of Hearts copy 0 (24+10=34)
             | card::card_mask(46); // Ace of Diamonds copy 0 (36+10=46)
         assert_eq!(compute_player_meld(hand, Suit::Spades), 100);
+    }
+
+    #[test]
+    fn test_double_copy_count() {
+        // Both copies of K+Q of spades (plain suit, trump=Hearts)
+        // Copy 0: K=6, Q=4. Copy 1: K=7, Q=5.
+        let hand = card::card_mask(4) | card::card_mask(5)  // Both Queens
+            | card::card_mask(6) | card::card_mask(7);  // Both Kings
+        // 2 marriages (K+Q pairs) × 20 pts = 40
+        assert_eq!(compute_player_meld(hand, Suit::Hearts), 40);
     }
 }
