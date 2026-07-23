@@ -37,7 +37,30 @@ algorithms to run with excellent spatial locality.
 
 ## Performance
 
-Benchmarks Coming Soon
+Release build, single-threaded (measured by regression test):
+
+```
+~450,000 games/sec
+```
+
+Release build, rayon parallel across all cores:
+
+```
+50,000 games in ~16ms  →  ~3.2 million games/sec
+~314 nanoseconds per full game (bidding + 12 tricks)
+```
+
+Run the regression gate:
+
+```
+cargo test --release -- regression --ignored
+```
+
+Run the parallel benchmark:
+
+```
+cargo run --release --bin benchmark
+```
 
 ## Bit Layout
 
