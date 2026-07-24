@@ -1,6 +1,6 @@
-use crate::card::{self, DECK_MASK};
+use crate::card;
 use crate::types::{Phase, Suit, NO_CARD, NO_PLAYER};
-use rand::Rng;
+use rand::seq::SliceRandom;
 
 #[repr(C, align(64))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -66,22 +66,8 @@ pub fn reset_hand(state: &mut GameState) {
 
 pub fn deal() -> [u64; 4] {
     let mut hands = [0u64; 4];
-    let mut indices: [u8; 48] = {
-        let mut arr = [0u8; 48];
-        let mut i = 0;
-        while i < 48 {
-            arr[i as usize] = i;
-            i += 1;
-        }
-        arr
-    };
-
-    // Fisher-Yates shuffle
-    let rng = &mut rand::rng();
-    for i in (1..48).rev() {
-        let j = rng.random_range(0..=i);
-        indices.swap(i, j);
-    }
+    let mut indices: [u8; 48] = std::array::from_fn(|i| i as u8);
+    indices.shuffle(&mut rand::rng());
 
     for (p, chunk) in indices.chunks(12).enumerate() {
         for &idx in chunk {
@@ -90,12 +76,6 @@ pub fn deal() -> [u64; 4] {
     }
 
     hands
-}
-
-/// Can be used to derive all played cards without exposing other players cards
-pub fn dead_cards(state: &GameState) -> u64 {
-    let in_play = state.hands[0] | state.hands[1] | state.hands[2] | state.hands[3];
-    DECK_MASK & !in_play
 }
 
 #[cfg(test)]
@@ -123,7 +103,7 @@ mod tests {
         }
         // All 48 cards accounted for
         let total = hands[0] | hands[1] | hands[2] | hands[3];
-        assert_eq!(total, DECK_MASK);
+        assert_eq!(total, card::DECK_MASK);
     }
 
     #[test]
@@ -136,7 +116,7 @@ mod tests {
         assert_eq!(state.trick_cards, [NO_CARD; 4]);
         // All 48 cards dealt
         let total = state.hands[0] | state.hands[1] | state.hands[2] | state.hands[3];
-        assert_eq!(total, DECK_MASK);
+        assert_eq!(total, card::DECK_MASK);
     }
 
     #[test]
@@ -147,10 +127,4 @@ mod tests {
         assert_eq!(team(3), 1);
     }
 
-    #[test]
-    fn test_dead_cards() {
-        let state = new_hand();
-        // After a fresh deal, no dead cards
-        assert_eq!(dead_cards(&state), 0);
-    }
 }

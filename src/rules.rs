@@ -156,14 +156,6 @@ pub fn min_bid(state: &GameState) -> u16 {
     }
 }
 
-pub fn is_legal_bid(state: &GameState, bid: u16) -> bool {
-    if bid == 0 {
-        true // Always can pass
-    } else {
-        bid >= min_bid(state) && bid <= 250 && bid % 5 == 0
-    }
-}
-
 pub fn apply_bid(mut state: GameState, bid: u16) -> GameState {
     debug_assert!(state.phase == Phase::Bidding, "apply_bid called outside Bidding phase");
     debug_assert!(bid == 0 || (bid <= 250 && bid % 5 == 0), "invalid bid {}", bid);
@@ -209,10 +201,6 @@ pub fn apply_action(state: GameState, action: Action) -> GameState {
         Action::Bid(bid) => apply_bid(state, bid),
         Action::Play(card_index) => apply_play(state, card_index),
     }
-}
-
-pub fn is_hand_over(state: &GameState) -> bool {
-    state.phase == Phase::Finished
 }
 
 pub fn finalize_hand(mut state: GameState) -> GameState {
@@ -327,15 +315,6 @@ mod tests {
         assert_eq!(min_bid(&state), 15);
         state.current_bid = 20;
         assert_eq!(min_bid(&state), 25);
-    }
-
-    #[test]
-    fn test_is_legal_bid() {
-        let state = new_hand();
-        assert!(is_legal_bid(&state, 0));
-        assert!(is_legal_bid(&state, 15));
-        assert!(!is_legal_bid(&state, 16)); // Not a multiple of 5
-        assert!(!is_legal_bid(&state, 10)); // Below minimum
     }
 
     #[test]
