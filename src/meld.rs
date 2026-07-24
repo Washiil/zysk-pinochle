@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 pub static TRUMP_MELD_TABLE: LazyLock<[u16; 4096]> = LazyLock::new(|| {
     let mut table = [0u16; 4096];
     for bits in 0..4096u16 {
-        table[bits as usize] = compute_suit_meld(bits, true);
+        table[bits as usize] = suit_meld(bits, true);
     }
     table
 });
@@ -16,7 +16,7 @@ pub static TRUMP_MELD_TABLE: LazyLock<[u16; 4096]> = LazyLock::new(|| {
 pub static PLAIN_MELD_TABLE: LazyLock<[u16; 4096]> = LazyLock::new(|| {
     let mut table = [0u16; 4096];
     for bits in 0..4096u16 {
-        table[bits as usize] = compute_suit_meld(bits, false);
+        table[bits as usize] = suit_meld(bits, false);
     }
     table
 });
@@ -28,7 +28,7 @@ fn count_rank(bits: u16, rank: Rank) -> u8 {
     (masked >> shift).count_ones() as u8
 }
 
-fn compute_suit_meld(bits: u16, is_trump: bool) -> u16 {
+fn suit_meld(bits: u16, is_trump: bool) -> u16 {
     let mut score = 0u16;
 
     // Dix: 10 points per nine (trump only)
@@ -64,7 +64,7 @@ fn compute_suit_meld(bits: u16, is_trump: bool) -> u16 {
 
 /// Returns the meld score for a player's hand given the trump suit.
 /// Handles both per-suit melds and cross-suit ("around") melds.
-pub fn compute_player_meld(hand: u64, trump: Suit) -> u16 {
+pub fn hand_meld(hand: u64, trump: Suit) -> u16 {
     let mut total = 0u16;
 
     // Per-suit melds via lookup tables
@@ -107,21 +107,21 @@ mod tests {
 
     #[test]
     fn test_empty_hand() {
-        assert_eq!(compute_player_meld(0, Suit::Spades), 0);
+        assert_eq!(hand_meld(0, Suit::Spades), 0);
     }
 
     #[test]
     fn test_dix_trump() {
         // A hand with just a 9 of spades, trump is spades
         let hand = card::card_mask(0); // index 0 = Nine of Spades copy 0
-        assert_eq!(compute_player_meld(hand, Suit::Spades), 10);
+        assert_eq!(hand_meld(hand, Suit::Spades), 10);
     }
 
     #[test]
     fn test_dix_non_trump() {
         // A nine in a non-trump suit is worth 0
         let hand = card::card_mask(0); // Nine of Spades, trump is Hearts
-        assert_eq!(compute_player_meld(hand, Suit::Hearts), 0);
+        assert_eq!(hand_meld(hand, Suit::Hearts), 0);
     }
 
     #[test]
@@ -129,14 +129,14 @@ mod tests {
         // K+Q of spades, trump is hearts
         // Index 4 = Queen of Spades copy 0, Index 6 = King of Spades copy 0
         let hand = card::card_mask(4) | card::card_mask(6);
-        assert_eq!(compute_player_meld(hand, Suit::Hearts), 20);
+        assert_eq!(hand_meld(hand, Suit::Hearts), 20);
     }
 
     #[test]
     fn test_royal_marriage_trump() {
         // K+Q of spades, trump is spades
         let hand = card::card_mask(4) | card::card_mask(6);
-        assert_eq!(compute_player_meld(hand, Suit::Spades), 40);
+        assert_eq!(hand_meld(hand, Suit::Spades), 40);
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
             | card::card_mask(6)   // King copy 0
             | card::card_mask(8)   // Ten copy 0
             | card::card_mask(10); // Ace copy 0
-        assert_eq!(compute_player_meld(hand, Suit::Spades), 150);
+        assert_eq!(hand_meld(hand, Suit::Spades), 150);
     }
 
     #[test]
@@ -156,7 +156,7 @@ mod tests {
         // Q♠ + J♦
         let hand = card::card_mask(4)  // Queen of Spades copy 0
             | card::card_mask(38); // Jack of Diamonds copy 0 (Diamonds start at 36, Jack = +2)
-        assert_eq!(compute_player_meld(hand, Suit::Spades), 40);
+        assert_eq!(hand_meld(hand, Suit::Spades), 40);
     }
 
     #[test]
@@ -166,7 +166,7 @@ mod tests {
             | card::card_mask(22)  // Ace of Clubs copy 0 (12+10=22)
             | card::card_mask(34)  // Ace of Hearts copy 0 (24+10=34)
             | card::card_mask(46); // Ace of Diamonds copy 0 (36+10=46)
-        assert_eq!(compute_player_meld(hand, Suit::Spades), 100);
+        assert_eq!(hand_meld(hand, Suit::Spades), 100);
     }
 
     #[test]
@@ -176,6 +176,6 @@ mod tests {
         let hand = card::card_mask(4) | card::card_mask(5)  // Both Queens
             | card::card_mask(6) | card::card_mask(7);  // Both Kings
         // 2 marriages (K+Q pairs) × 20 pts = 40
-        assert_eq!(compute_player_meld(hand, Suit::Hearts), 40);
+        assert_eq!(hand_meld(hand, Suit::Hearts), 40);
     }
 }

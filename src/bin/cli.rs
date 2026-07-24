@@ -1,4 +1,5 @@
 use zysk_pinochle::bench::run_game;
+use zysk_pinochle::new_hand;
 use zysk_pinochle::{Player, RandomPlayer};
 
 fn main() {
@@ -8,7 +9,8 @@ fn main() {
         &RandomPlayer,
         &RandomPlayer,
     ];
-    let state = run_game(&players);
+    let mut state = new_hand();
+    run_game(&mut state, &players);
 
     println!("Game over!");
     println!("Team 0 (players 0,2): {} points", state.scores[0]);

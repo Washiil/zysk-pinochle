@@ -20,7 +20,8 @@ fn test_full_game() {
     assert_eq!(state.hands[3].count_ones(), 12);
 
     // Run a full game
-    let state = run_game(&players);
+    let mut state = zysk_pinochle::new_hand();
+    run_game(&mut state, &players);
 
     assert_eq!(state.tricks_played, 12);
     assert_eq!(state.phase, zysk_pinochle::Phase::Finished);
@@ -40,7 +41,8 @@ fn test_multiple_games() {
     ];
 
     for _ in 0..100 {
-        let state = run_game(&players);
+        let mut state = zysk_pinochle::new_hand();
+        run_game(&mut state, &players);
         assert_eq!(state.phase, zysk_pinochle::Phase::Finished);
         assert_eq!(state.tricks_played, 12);
         assert_eq!(state.trick_points[0] + state.trick_points[1], 250);
