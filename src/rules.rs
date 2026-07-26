@@ -157,38 +157,31 @@ pub fn min_bid(state: &GameState) -> u16 {
 pub fn make_bid(state: &mut GameState, bid: u16) {
     debug_assert!(state.phase == Phase::Bidding, "make_bid called outside Bidding phase");
     debug_assert!(bid == 0 || (bid <= 250 && bid % 5 == 0), "invalid bid {}", bid);
-
-    if bid == 0 {
-        state.pass_count += 1;
-        // All 4 pass with no bid: redeal (preserve accumulated scores)
-        if state.pass_count >= 4 && state.current_bid == 0 {
-            let scores = state.scores;
-            *state = crate::state::new_hand();
-            state.scores = scores;
-            return;
-        }
-        // 3 consecutive passes after a non-zero bid ends bidding
-        if state.pass_count >= 3 && state.current_bid > 0 {
-            state.phase = Phase::TrickTaking;
-            state.trump_suit = Suit::Spades; // scaffold: default trump
-            // Compute meld from hands before trick-taking begins
-            state.meld_scores[0] = 0;
-            state.meld_scores[1] = 0;
-            for p in 0..4 {
-                let meld = hand_meld(state.hands[p], state.trump_suit);
-                state.meld_scores[team(p as u8)] += meld;
-            }
-            // Player to left of declarer leads the first trick
-            state.turn = (state.declarer + 1) % 4;
-            state.leader = state.turn;
-        } else {
-            state.turn = (state.turn + 1) % 4;
-        }
-    } else {
+    if bid != 0 {
+        debug_assert!(bid > state.current_bid, "bid {} must exceed current bid {}", bid, state.current_bid);
         state.current_bid = bid;
         state.declarer = state.turn;
-        state.pass_count = 0;
-        state.turn = (state.turn + 1) % 4;
+    }
+
+    state.pass_count += 1;
+    state.turn = (state.turn + 1) % 4;
+
+    if state.pass_count == 4 {
+        if state.current_bid == 0 {
+            // All passed — dealer (turn cycled back to start) forced to bid 15
+            state.current_bid = 15;
+            state.declarer = state.turn;
+        }
+        state.phase = Phase::TrickTaking;
+        state.trump_suit = Suit::Spades; // scaffold: default trump
+        state.meld_scores[0] = 0;
+        state.meld_scores[1] = 0;
+        for p in 0..4 {
+            let meld = hand_meld(state.hands[p], state.trump_suit);
+            state.meld_scores[team(p as u8)] += meld;
+        }
+        state.turn = (state.declarer + 1) % 4;
+        state.leader = state.turn;
     }
 }
 
@@ -315,6 +308,7 @@ mod tests {
     #[test]
     fn test_apply_bid_pass() {
         let mut state = new_hand();
+        state.turn = 0;
         make_bid(&mut state, 0);
         assert_eq!(state.turn, 1);
         assert_eq!(state.pass_count, 1);
@@ -324,26 +318,43 @@ mod tests {
     #[test]
     fn test_apply_bid_bid() {
         let mut state = new_hand();
+        state.turn = 0;
         make_bid(&mut state, 20);
         assert_eq!(state.current_bid, 20);
         assert_eq!(state.declarer, 0);
-        assert_eq!(state.pass_count, 0);
+        assert_eq!(state.pass_count, 1);
         assert_eq!(state.turn, 1);
     }
 
     #[test]
-    fn test_bidding_ends() {
+    fn test_bidding_ends_after_four_actions() {
         let mut state = new_hand();
+        state.turn = 0;
         state.current_bid = 20;
-        state.declarer = 0;
-        state.pass_count = 2;
-        state.turn = 2;
-        // Third consecutive pass should end bidding
+        state.declarer = 2;
+        state.pass_count = 3;
+        // Fourth action ends bidding
         make_bid(&mut state, 0);
         assert_eq!(state.phase, Phase::TrickTaking);
-        // Player to left of declarer leads
-        assert_eq!(state.turn, 1);
-        assert_eq!(state.leader, 1);
+        // Player to left of declarer (2) leads
+        assert_eq!(state.turn, 3);
+        assert_eq!(state.leader, 3);
+    }
+
+    #[test]
+    fn test_all_pass_force_bid() {
+        let mut state = new_hand();
+        state.turn = 1;
+        // dealer=1, 4 passes
+        make_bid(&mut state, 0); // P1 passes, turn->2
+        make_bid(&mut state, 0); // P2 passes, turn->3
+        make_bid(&mut state, 0); // P3 passes, turn->0
+        make_bid(&mut state, 0); // P0 passes, turn->1 (back at dealer)
+        assert_eq!(state.phase, Phase::TrickTaking);
+        assert_eq!(state.current_bid, 15);
+        assert_eq!(state.declarer, 1); // dealer forced
+        assert_eq!(state.turn, 2);     // left of declarer leads
+        assert_eq!(state.leader, 2);
     }
 
     #[test]

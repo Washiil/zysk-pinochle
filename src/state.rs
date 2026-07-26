@@ -56,7 +56,7 @@ pub fn reset_hand(state: &mut GameState) {
     state.meld_scores = [0, 0];
     state.current_bid = 0;
     state.trump_suit = Suit::Spades;
-    state.turn = 0;
+    state.turn = rand::Rng::random_range(&mut rand::rng(), 0..4);
     state.leader = NO_PLAYER;
     state.declarer = NO_PLAYER;
     state.phase = Phase::Bidding;
@@ -123,7 +123,7 @@ mod tests {
     fn test_new_hand() {
         let state = new_hand();
         assert_eq!(state.phase, Phase::Bidding);
-        assert_eq!(state.turn, 0);
+        assert!(state.turn < 4);
         assert_eq!(state.tricks_played, 0);
         assert_eq!(state.current_bid, 0);
         assert_eq!(state.trick_cards, [NO_CARD; 4]);
