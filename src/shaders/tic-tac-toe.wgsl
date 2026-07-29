@@ -8,13 +8,16 @@ var<storage, read_write> output: array<u32>;
 const BOARD_SIZE: u32 = 9u;
 const MAX_DEPTH: u32 = 10u;
 
+const X: u32 = 1;
+const O: u32 = 2;
+
 /// 1 represents X and 2 represents O
-fn get_cell(board: u32, idx: u32) -> i32 {
+fn get_cell(board: u32, idx: u32) -> u32 {
     // Because 00_00_11 
-    return i32((board >> (idx * 2u)) & 0x3u);
+    return (board >> (idx * 2u)) & 0x3u;
 }
 
-const LINES: array<u32, 8> = array<u32, 8>(
+const WINNING_LINES: array<u32, 8> = array<u32, 8>(
     // Rows
     (1u << (0u * 2u)) | (1u << (1u * 2u)) | (1u << (2u * 2u)), // Top Row    (0, 1, 2)
     (1u << (3u * 2u)) | (1u << (4u * 2u)) | (1u << (5u * 2u)), // Mid Row    (3, 4, 5)
@@ -35,14 +38,14 @@ fn check_win(board: u32, player: u32) -> bool {
     
     // The GPU compiler will unroll this entirely into 8 parallel mask checks
     // using bitwise logic without branching instructions
-    won = won | ((board & (LINES[0] * player)) == (LINES[0] * player));
-    won = won | ((board & (LINES[1] * player)) == (LINES[1] * player));
-    won = won | ((board & (LINES[2] * player)) == (LINES[2] * player));
-    won = won | ((board & (LINES[3] * player)) == (LINES[3] * player));
-    won = won | ((board & (LINES[4] * player)) == (LINES[4] * player));
-    won = won | ((board & (LINES[5] * player)) == (LINES[5] * player));
-    won = won | ((board & (LINES[6] * player)) == (LINES[6] * player));
-    won = won | ((board & (LINES[7] * player)) == (LINES[7] * player));
+    won = won | ((board & (WINNING_LINES[0] * player)) == (WINNING_LINES[0] * player));
+    won = won | ((board & (WINNING_LINES[1] * player)) == (WINNING_LINES[1] * player));
+    won = won | ((board & (WINNING_LINES[2] * player)) == (WINNING_LINES[2] * player));
+    won = won | ((board & (WINNING_LINES[3] * player)) == (WINNING_LINES[3] * player));
+    won = won | ((board & (WINNING_LINES[4] * player)) == (WINNING_LINES[4] * player));
+    won = won | ((board & (WINNING_LINES[5] * player)) == (WINNING_LINES[5] * player));
+    won = won | ((board & (WINNING_LINES[6] * player)) == (WINNING_LINES[6] * player));
+    won = won | ((board & (WINNING_LINES[7] * player)) == (WINNING_LINES[7] * player));
 
     return won;
 }
@@ -53,6 +56,40 @@ fn count_x(board: u32) -> u32 {
 
 fn count_o(board: u32) -> u32 {
     return countOneBits(board & (0x15555 << 1u)); // 0b10_10_10_10_10_10_10_10_10
+}
+
+fn two_in_a_row() -> u32 {
+    return 0u;
+}
+
+// Newell and Simon's 1972 tic-tac-toe program
+fn get_best_move(board: u32, turn: u32) -> u32 {
+    // Blocking an opponent's fork: If there is only one possible fork for the opponent, the player should block it. Otherwise, the player should block all forks in any way that simultaneously allows them to make two in a row. Otherwise, the player should make a two in a row to force the opponent into defending, as long as it does not result in them producing a fork. For example, if "X" has two opposite corners and "O" has the center, "O" must not play a corner move to win. (Playing a corner move in this scenario produces a fork for "X" to win.)
+    // Center: A player marks the center. (If it is the first move of the game, playing a corner move gives the second player more opportunities to make a mistake and may therefore be the better choice; however, it makes no difference between perfect players.)
+    // Opposite corner: If the opponent is in the corner, the player plays the opposite corner.
+    // Empty corner: The player plays in a corner square.
+    // Empty side: The player plays in a middle square on any of the four sides.
+    
+    let opponent = 3 - turn;
+    
+    // Win: If the player has two in a row, they can place a third to get three in a row.
+    for (var i = 0u; i < 9u; i = i + 1u) {
+        if (get_cell(board, i) == 0u) {
+            if (check_win(board | (turn << (i * 2u)), turn)) { return i; }
+        }
+    }
+    
+    // Block: If the opponent has two in a row, the player must play the third themselves to block the opponent.
+    for (var i = 0u; i < 9u; i = i + 1u) {
+        if (get_cell(board, i) == 0u) {
+            if (check_win(board | (opponent << (i * 2u)), opponent)) { return i; }
+        }
+    }
+    
+    // Fork: Cause a scenario where the player has two ways to win (two non-blocked WINNING_LINES of 2).
+
+
+    return 0u;
 }
 
 @compute @workgroup_size(64)
@@ -66,19 +103,18 @@ fn solve_tic_tac_toe(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     let board = input[board_index];
-    let made_move = (board & 0x3FFFFu) > 0u;
-    
-    let turn = (count_x(board) % 2) + 1;
 
-    // Win: If the player has two in a row, they can place a third to get three in a row.
-    // Block: If the opponent has two in a row, the player must play the third themselves to block the opponent.
-    // Fork: Cause a scenario where the player has two ways to win (two non-blocked lines of 2).
-    // Blocking an opponent's fork: If there is only one possible fork for the opponent, the player should block it. Otherwise, the player should block all forks in any way that simultaneously allows them to make two in a row. Otherwise, the player should make a two in a row to force the opponent into defending, as long as it does not result in them producing a fork. For example, if "X" has two opposite corners and "O" has the center, "O" must not play a corner move to win. (Playing a corner move in this scenario produces a fork for "X" to win.)
-    // Center: A player marks the center. (If it is the first move of the game, playing a corner move gives the second player more opportunities to make a mistake and may therefore be the better choice; however, it makes no difference between perfect players.)
-    // Opposite corner: If the opponent is in the corner, the player plays the opposite corner.
-    // Empty corner: The player plays in a corner square.
-    // Empty side: The player plays in a middle square on any of the four sides.
+    let x_count = count_x(board);
+    let o_count = count_o(board);
 
+    // Early termination
+    if (check_win(board, X) || check_win(board, O) || x_count + o_count == 9u) {
+        output[board_index] = 9u; 
+        return;
+    }
 
-    output[board_index] = u32(x_count);
+    let turn = (x_count % 2) + 1;
+    let best_move = get_best_move(board, turn);
+
+    output[board_index] = u32(best_move);
 }
