@@ -23,7 +23,7 @@ fn main() {
     env_logger::init();
 
     #[rustfmt::skip]
-    let raw_boards: [[u32; 9]; 4] = [
+    let raw_boards: [[u32; 9]; 5] = [
         // Board 0: X has middle + a corner, O has the opposite corner.
         [
             X,     EMPTY, O,
@@ -46,7 +46,12 @@ fn main() {
             X, X, X,
             O, O, X,
             O, X, O
-        ]
+        ],
+        [
+            X, X,     EMPTY,
+            O, O,     EMPTY,
+            EMPTY, X, EMPTY,
+        ],
     ];
 
     // Pack each 9-cell board down to a single u32 bitboard
