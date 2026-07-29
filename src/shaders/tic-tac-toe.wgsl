@@ -98,28 +98,71 @@ fn get_best_move(board: u32, turn: u32) -> u32 {
     
     // Win: If the player has two in a row, they can place a third to get three in a row.
     for (var i = 0u; i < 9u; i = i + 1u) {
-        if (get_cell(board, i) == 0u) {
-            if (check_win(board | (turn << (i * 2u)), turn)) { return i; }
-        }
+        if (get_cell(board, i) != 0u) { continue; }
+
+        if (check_win(board | (turn << (i * 2u)), turn)) { return i; }
     }
     
     // Block: If the opponent has two in a row, the player must play the third themselves to block the opponent.
     for (var i = 0u; i < 9u; i = i + 1u) {
-        if (get_cell(board, i) == 0u) {
-            if (check_win(board | (opponent << (i * 2u)), opponent)) { return i; }
-        }
+        if (get_cell(board, i) != 0u) { continue; }
+
+        if (check_win(board | (opponent << (i * 2u)), opponent)) { return i; }
     }
     
     // Fork: Cause a scenario where the player has two ways to win (two non-blocked WINNING_LINES of 2).
     for (var i = 0u; i < 9u; i = i + 1u) {
-        if (get_cell(board, i) == 0u) {
-            let test_board = board | (turn << (i * 2u));
-            if (count_winning_moves(test_board, turn) >= 2u) { return i; }
+        if (get_cell(board, i) != 0u) { continue; }
+
+        let test_board = board | (turn << (i * 2u));
+        if (count_winning_moves(test_board, turn) >= 2u) { return i; }
+    }
+
+    // Blocking an opponent's fork: If there is only one possible fork for the opponent, the player should block it. 
+    // Otherwise, the player should block all forks in any way that simultaneously allows them to make two in a row. 
+    // Otherwise, the player should make a two in a row to force the opponent into defending, as long as it does not 
+    // result in them producing a fork. For example, if "X" has two opposite corners and "O" has the center, "O" must 
+    // not play a corner move to win. (Playing a corner move in this scenario produces a fork for "X" to win.)
+    var opp_forks = 0u;
+    var first_fork = NO_MOVE;
+
+    for (var i = 0u; i < 9u; i = i + 1u) {
+        if (get_cell(board, i) != 0u) { continue; }
+
+        let test_board = board | (opponent << (i * 2u));
+        if (count_winning_moves(test_board, opponent) >= 2u) {
+            if (opp_forks == 0u) {
+                first_fork = i;
+            }
+            opp_forks = opp_forks + 1u;
+            if (opp_forks >= 2u) {
+                break; // we only care about 0 / 1 / >1
+            }
         }
     }
 
-    // Blocking an opponent's fork: If there is only one possible fork for the opponent, the player should block it. Otherwise, the player should block all forks in any way that simultaneously allows them to make two in a row. Otherwise, the player should make a two in a row to force the opponent into defending, as long as it does not result in them producing a fork. For example, if "X" has two opposite corners and "O" has the center, "O" must not play a corner move to win. (Playing a corner move in this scenario produces a fork for "X" to win.)
+    if (opp_forks == 1u) {
+        return first_fork;
+    }
 
+    if (opp_forks > 1u) {
+        // Multiple fork threats: find a move that forces opponent to
+        // block, without their forced block handing them a fork.
+        for (var i = 0u; i < 9u; i = i + 1u) {
+            if (get_cell(board, i) != 0u) {
+                continue;
+            }
+            let test_board = board | (turn << (i * 2u));
+            let forced_block = first_winning_move(test_board, opponent);
+            if (forced_block == NO_MOVE) {
+                continue;
+            }
+            let opp_after_block = test_board | (opponent << (forced_block * 2u));
+            if (count_winning_moves(opp_after_block, opponent) < 2u) {
+                return i;
+            }
+        }
+    }
 
     return 0u;
 }
