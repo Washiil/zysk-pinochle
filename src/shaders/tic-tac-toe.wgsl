@@ -8,6 +8,7 @@ var<storage, read_write> output: array<u32>;
 const BOARD_SIZE: u32 = 9u;
 const MAX_DEPTH: u32 = 10u;
 
+const NO_MOVE: u32 = 9u;
 const X: u32 = 1;
 const O: u32 = 2;
 
@@ -50,6 +51,30 @@ fn check_win(board: u32, player: u32) -> bool {
     return won;
 }
 
+fn count_winning_moves(board: u32, player: u32) -> u32 {
+    var wins = 0u;
+    for (var i = 0u; i < 9u; i = i + 1u) {
+        if (get_cell(board, i) == 0u) {
+            let test_board = board | (player << (i * 2u));
+            if (check_win(test_board, player)) {
+                wins = wins + 1u;
+            }
+        }
+    }
+    return wins;
+}
+
+fn first_winning_move(board: u32, player: u32) -> u32 {
+    for (var i = 0u; i < 9u; i = i + 1u) {
+        if (get_cell(board, i) == 0u) {
+            if (check_win(board | (player << (i * 2u)), player)) {
+                return i;
+            }
+        }
+    }
+    return NO_MOVE;
+}
+
 fn count_x(board: u32) -> u32 {
     return countOneBits(board & 0x15555u); // 0b01_01_01_01_01_01_01_01_01
 }
@@ -64,7 +89,6 @@ fn two_in_a_row() -> u32 {
 
 // Newell and Simon's 1972 tic-tac-toe program
 fn get_best_move(board: u32, turn: u32) -> u32 {
-    // Blocking an opponent's fork: If there is only one possible fork for the opponent, the player should block it. Otherwise, the player should block all forks in any way that simultaneously allows them to make two in a row. Otherwise, the player should make a two in a row to force the opponent into defending, as long as it does not result in them producing a fork. For example, if "X" has two opposite corners and "O" has the center, "O" must not play a corner move to win. (Playing a corner move in this scenario produces a fork for "X" to win.)
     // Center: A player marks the center. (If it is the first move of the game, playing a corner move gives the second player more opportunities to make a mistake and may therefore be the better choice; however, it makes no difference between perfect players.)
     // Opposite corner: If the opponent is in the corner, the player plays the opposite corner.
     // Empty corner: The player plays in a corner square.
@@ -87,6 +111,14 @@ fn get_best_move(board: u32, turn: u32) -> u32 {
     }
     
     // Fork: Cause a scenario where the player has two ways to win (two non-blocked WINNING_LINES of 2).
+    for (var i = 0u; i < 9u; i = i + 1u) {
+        if (get_cell(board, i) == 0u) {
+            let test_board = board | (turn << (i * 2u));
+            if (count_winning_moves(test_board, turn) >= 2u) { return i; }
+        }
+    }
+
+    // Blocking an opponent's fork: If there is only one possible fork for the opponent, the player should block it. Otherwise, the player should block all forks in any way that simultaneously allows them to make two in a row. Otherwise, the player should make a two in a row to force the opponent into defending, as long as it does not result in them producing a fork. For example, if "X" has two opposite corners and "O" has the center, "O" must not play a corner move to win. (Playing a corner move in this scenario produces a fork for "X" to win.)
 
 
     return 0u;

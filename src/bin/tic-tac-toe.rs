@@ -1,4 +1,4 @@
-use std::num::NonZeroU64;
+use std::num::{IntErrorKind::Empty, NonZeroU64};
 use wgpu::util::DeviceExt;
 
 /// Cell encoding, 2 bits per cell, matching the WGSL shader:
@@ -23,7 +23,7 @@ fn main() {
     env_logger::init();
 
     #[rustfmt::skip]
-    let raw_boards: [[u32; 9]; 5] = [
+    let raw_boards: [[u32; 9]; 6] = [
         // Board 0: X has middle + a corner, O has the opposite corner.
         [
             X,     EMPTY, O,
@@ -51,6 +51,11 @@ fn main() {
             X, X,     EMPTY,
             O, O,     EMPTY,
             EMPTY, X, EMPTY,
+        ],
+        [
+            X, EMPTY,     EMPTY,
+            O, O,     X,
+            EMPTY, EMPTY, EMPTY,
         ],
     ];
 
