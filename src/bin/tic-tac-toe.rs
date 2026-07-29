@@ -1,36 +1,52 @@
-/// Tic-tac-toe solver, adapted from the "double every number" compute shader
-/// intro. Same wgpu setup shape (instance -> adapter -> device -> buffers ->
-/// bind group -> pipeline -> encode -> submit -> map -> read), but instead of
-/// taking numbers from argv, we hardcode a couple of tic-tac-toe boards and
-/// send the *whole board* per GPU invocation, since one invocation now solves
-/// an entire game tree rather than doing one float multiply.
 use std::num::NonZeroU64;
 use wgpu::util::DeviceExt;
+
+/// Cell encoding, 2 bits per cell, matching the WGSL shader:
+///   00 = empty, 01 = X, 10 = O
+const EMPTY: u32 = 0b00;
+const X: u32 = 0b01;
+const O: u32 = 0b10;
+
+/// Pack a 9-cell board (row-major, cell 0..8) into a single u32 bitboard,
+/// 2 bits per cell, matching `get_cell` in the WGSL shader:
+///   (board >> (idx * 2)) & 0x3
+fn pack_board(cells: [u32; 9]) -> u32 {
+    let mut board = 0u32;
+    for (idx, &cell) in cells.iter().enumerate() {
+        debug_assert!(cell <= 0b11, "cell value must fit in 2 bits");
+        board |= cell << (idx as u32 * 2);
+    }
+    board
+}
 
 fn main() {
     env_logger::init();
 
-    // ---- Hardcoded boards instead of parsed CLI args ----
-    // Encoding: 1.0 = X, -1.0 = O, 0.0 = empty. 9 floats per board, row-major.
     #[rustfmt::skip]
-    let boards: Vec<f32> = vec![
+    let raw_boards: [[u32; 9]; 3] = [
         // Board 0: X has middle + a corner, O has the opposite corner.
-        // X to move (equal X/O count... actually X is ahead here, so O to move).
-         1.0,  0.0, -1.0,
-         0.0,  1.0,  0.0,
-         0.0,  0.0,  0.0,
-
+        [
+            X,     EMPTY, O,
+            EMPTY, X,     EMPTY,
+            EMPTY, EMPTY, EMPTY,
+        ],
         // Board 1: empty board. X to move.
-         0.0,  0.0,  0.0,
-         0.0,  0.0,  0.0,
-         0.0,  0.0,  0.0,
-
+        [
+            EMPTY, EMPTY, EMPTY,
+            EMPTY, EMPTY, EMPTY,
+            EMPTY, EMPTY, EMPTY,
+        ],
         // Board 2: X is one move from winning across the top row.
-         1.0,  1.0,  0.0,
-        -1.0, -1.0,  0.0,
-         0.0,  0.0,  0.0,
+        [
+            X, X,     EMPTY,
+            O, O,     EMPTY,
+            EMPTY, EMPTY, EMPTY,
+        ],
     ];
-    let board_count = boards.len() / 9;
+
+    // Pack each 9-cell board down to a single u32 bitboard
+    let boards: Vec<u32> = raw_boards.iter().map(|&cells| pack_board(cells)).collect();
+    let board_count = boards.len();
     println!("Solving {board_count} board(s)");
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -61,18 +77,16 @@ fn main() {
 
     let module = device.create_shader_module(wgpu::include_wgsl!("../shaders/tic-tac-toe.wgsl"));
 
-    // Input buffer: 9 floats per board.
+    // Input buffer: ONE u32 per board now (packed bitboard), not 9 floats.
     let input_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
         contents: bytemuck::cast_slice(&boards),
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    // Output buffer: only 2 floats per board (best_move, score), NOT the same
-    // size as the input. This differs from the doubling example, where input
-    // and output happened to be the same length.
-    let output_element_count = board_count * 2;
-    let output_size = (output_element_count * std::mem::size_of::<f32>()) as u64;
+    // Define what the outputs should look like
+    let output_element_count = board_count;
+    let output_size = (output_element_count * std::mem::size_of::<u32>()) as u64;
     let output_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: output_size,
@@ -155,8 +169,7 @@ fn main() {
     compute_pass.set_pipeline(&pipeline);
     compute_pass.set_bind_group(0, &bind_group, &[]);
 
-    // One invocation solves one whole board, so we dispatch based on
-    // board_count, not the raw float count.
+    // One invocation solves one whole board (hopefully)
     let workgroup_count = board_count.div_ceil(64);
     compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
 
@@ -179,18 +192,12 @@ fn main() {
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
     let data = buffer_slice.get_mapped_range().unwrap();
-    let result: Vec<f32> = bytemuck::allocation::pod_collect_to_vec(&data);
+    let result: Vec<u32> = bytemuck::allocation::pod_collect_to_vec(&data);
 
-    // Pretty-print [best_move, score] pairs per board.
-    for (i, pair) in result.chunks_exact(2).enumerate() {
-        let best_move = pair[0] as i32;
-        let score = pair[1] as i32;
-        let outcome = match score {
-            1 => "win",
-            0 => "draw",
-            -1 => "loss",
-            _ => "unknown",
-        };
-        println!("Board {i}: best move = {best_move}, outcome = {outcome} ({score})");
+    println!("{result:?}");
+
+    // One result per board
+    for (i, res) in result.iter().enumerate() {
+        println!("Board {i}: {res}");
     }
 }

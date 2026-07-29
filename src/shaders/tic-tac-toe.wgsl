@@ -49,18 +49,16 @@ fn check_win(board: u32, player: u32) -> bool {
 
 @compute @workgroup_size(64)
 fn solve_tic_tac_toe(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let board_count = arrayLength(&input) / BOARD_SIZE;
     let board_index = global_id.x;
+    let board_count = arrayLength(&input);
+
+    // Bounds check FIRST before indexing arrays
     if (board_index >= board_count) {
         return;
     }
 
-    let made_move = input[board_index] & 0x3FFFFu;
+    let board = input[board_index];
+    let made_move = (board & 0x3FFFFu) > 0u;
 
-    let low_bits  = input[board_index] & 0x15555u; // 0b01_01_01_01_01_01_01_01_01
-    let high_bits = (input[board_index] & 0x2AAAAu) >> 1u; // 0b10_10_10_10_10_10_10_10_10
-
-    // Write [best_move, score] for this board.
-    output[board_index * 2u] = 0;
-    output[board_index * 2u + 1u] = 0;
+    output[board_index] = u32(made_move);
 }
