@@ -160,24 +160,27 @@ fn get_best_move(board: u32, turn: u32) -> u32 {
         }
     }
     
-    // Empty side: The player plays in a middle square on any of the four sides.
-    if (get_cell(board, 1) == 0) { return 1; };
-    if (get_cell(board, 3) == 0) { return 3; };
-    if (get_cell(board, 5) == 0) { return 5; };
-    if (get_cell(board, 7) == 0) { return 7; };
+    // Center: A player marks the center. (If it is the first move of the game, playing a corner move gives the second player more opportunities to make a mistake and may therefore be the better choice; however, it makes no difference between perfect players.)
+    if (get_cell(board, 4) == 0) { return 4; };
+
+    // Opposite corner: If the opponent is in the corner, the player plays the opposite corner.
+    if (get_cell(board, 0u) == opponent && get_cell(board, 8u) == 0u) { return 8u; }
+    if (get_cell(board, 8u) == opponent && get_cell(board, 0u) == 0u) { return 0u; }
+    if (get_cell(board, 2u) == opponent && get_cell(board, 6u) == 0u) { return 6u; }
+    if (get_cell(board, 6u) == opponent && get_cell(board, 2u) == 0u) { return 2u; }
     
     // Empty corner: The player plays in a corner square.
     if (get_cell(board, 0) == 0) { return 0; };
     if (get_cell(board, 2) == 0) { return 2; };
     if (get_cell(board, 6) == 0) { return 6; };
     if (get_cell(board, 8) == 0) { return 8; };
-    
-    // Opposite corner: If the opponent is in the corner, the player plays the opposite corner.
-    
-    
-    // Center: A player marks the center. (If it is the first move of the game, playing a corner move gives the second player more opportunities to make a mistake and may therefore be the better choice; however, it makes no difference between perfect players.)
-    if (get_cell(board, 4) == 0) { return 4; };
 
+    // Empty side: The player plays in a middle square on any of the four sides.
+    if (get_cell(board, 1) == 0) { return 1; };
+    if (get_cell(board, 3) == 0) { return 3; };
+    if (get_cell(board, 5) == 0) { return 5; };
+    if (get_cell(board, 7) == 0) { return 7; };
+    
     return 9u;
 }
 
