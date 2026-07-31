@@ -2,11 +2,66 @@
 
 use std::num::NonZeroU64;
 use wgpu::util::DeviceExt;
+use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Bit256 {
-    data: [u32; 8],
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct MctsRolloutInput {
+    // Hands 32 Bytes 
+    pub p0_hand: [u32; 2],
+    pub p1_hand: [u32; 2],
+    pub p2_hand: [u32; 2],
+    pub p3_hand: [u32; 2],
+
+    // Mask of the 0 to 3 cards currently sitting on the table.
+    pub current_trick_cards: [u32; 2],
+
+    // CPU RNG 8 bytes
+    pub rng_state: [u32; 2],
+
+    // Packed Metadata 12 Bytes
+    pub packed_metadata: u32, // Who is playing, what is trump, etc.
+    pub packed_scores: u32,   // Current meld + trick points
+    pub packed_bids: u32,     // Who won the bid and for what amount
+
+    pub _padding: u32,
+}
+
+impl MctsRolloutInput {
+    pub fn pack_metadata(
+        winning_card_index: u32,
+        winning_player: u32,
+        lead_player: u32,
+        current_player: u32,
+        trump_suit: u32,
+        lead_suit: u32,
+        tricks_played: u32,
+    ) -> u32 {
+        let mut packed = 0u32;
+        packed |= winning_card_index & 0x3F;               // 6 bits
+        packed |= (winning_player & 0x03) << 6;            // 2 bits
+        packed |= (lead_player & 0x03) << 8;               // 2 bits
+        packed |= (current_player & 0x03) << 10;           // 2 bits
+        packed |= (trump_suit & 0x03) << 12;               // 2 bits
+        packed |= (lead_suit & 0x07) << 14;                // 3 bits
+        packed |= (tricks_played & 0x0F) << 17;            // 4 bits
+        packed
+    }
+
+    pub fn pack_scores(team_a_score: u32, team_b_score: u32) -> u32 {
+        (team_a_score & 0xFFFF) | ((team_b_score & 0xFFFF) << 16)
+    }
+
+    pub fn pack_bids(team_a_bid: u32, team_b_bid: u32) -> u32 {
+        (team_a_bid & 0xFFFF) | ((team_b_bid & 0xFFFF) << 16)
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct MctsRolloutOutput {
+    pub team_0_2_score: u32,
+    pub team_1_3_score: u32,
 }
 
 fn main() {
@@ -14,10 +69,8 @@ fn main() {
 
     // Example input: a handful of 256-bit hands to evaluate.
     // Replace this with your real hand-generation logic.
-    let hands: Vec<Bit256> = vec![
-        Bit256 { data: [1, 0, 1, 0, 0, 0, 0, 0] }, // bit 0 and bit 64 set -> rule_a true
-        Bit256 { data: [0xFF00FF00, 0, 0, 0, 0, 0, 0, 0] }, // rule_b true
-        Bit256 { data: [0, 0, 0, 0, 0, 0, 0, 0] }, // neither rule -> false
+    let hands: Vec<MctsRolloutInput> = vec![
+
     ];
 
     // Load wgpu

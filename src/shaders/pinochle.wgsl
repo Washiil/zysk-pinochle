@@ -1,16 +1,28 @@
-// Represents a 256-bit vector using 8 x 32-bit unsigned integers (8 * 32 = 256 bits).
-struct Bit256 {
-    // data[0] holds bits 0..31, data[1] holds bits 32..63, ..., data[7] holds bits 224..255
-    data: array<u32, 8>,
+// Shader for pinochle Monte carlo simulation
+
+struct MctsRolloutInput {
+    p0_hand: vec2<u32>,
+    p1_hand: vec2<u32>,
+    p2_hand: vec2<u32>,
+    p3_hand: vec2<u32>,
+    
+    current_trick_cards: vec2<u32>,
+    rng_state: vec2<u32>,
+    
+    packed_metadata: u32,
+    packed_scores: u32,
+    packed_bids: u32,
+    _padding: u32,
 }
 
-// Input buffer: An array of N 256-bit vectors.
-@group(0) @binding(0)
-var<storage, read> input_hands: array<Bit256>;
+struct MctsRolloutOutput {
+    team_0_2_score: u32,
+    team_1_3_score: u32,
+}
 
-// Output buffer: An array of N boolean results (stored as 0u for false, 1u for true).
-@group(0) @binding(1)
-var<storage, read_write> output_results: array<u32>;
+// Bind group buffers
+@group(0) @binding(0) var<storage, read> inputs: array<MctsRolloutInput>;
+@group(0) @binding(1) var<storage, read_write> outputs: array<MctsRolloutOutput>;
 
 // Helper: Checks if a specific bit (0 to 255) is set inside a 256-bit block.
 fn is_bit_set(hand: Bit256, bit_index: u32) -> bool {
