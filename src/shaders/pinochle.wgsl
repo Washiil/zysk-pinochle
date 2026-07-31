@@ -1,19 +1,28 @@
 // Shader for pinochle Monte carlo simulation
 
-struct MctsRolloutInput {
-    p0_hand: vec2<u32>,
-    p1_hand: vec2<u32>,
-    p2_hand: vec2<u32>,
-    p3_hand: vec2<u32>,
-    
-    current_trick_cards: vec2<u32>,
-    rng_state: vec2<u32>,
-    
-    packed_metadata: u32,
-    packed_scores: u32,
-    packed_bids: u32,
-    _padding: u32,
-}
+struct RolloutConstants {
+    // Ground-truth hand for perspective_player
+    p0_hand: array<u32, 2>,
+    p1_hand: array<u32, 2>,
+    p2_hand: array<u32, 2>,
+    p3_hand: array<u32, 2>,
+
+    current_trick_cards: array<u32, 2>,
+    unseen_pool:         array<u32, 2>, // undealt cards, redealt each rollout
+    exposed_cards:       array<u32, 2>, // publicly known cards (melds etc.)
+    played_out_cards:    array<u32, 2>, // already played & collected this hand
+
+    packed_metadata:    u32, // winning_card_idx | winning_player | lead_player |
+                              // current_player | trump_suit | lead_suit | tricks_played
+    packed_scores:      u32, // team_a_score | team_b_score << 16
+    packed_bids:        u32, // team_a_bid   | team_b_bid   << 16
+    packed_constraints: u32, // void_suits (16b, 4b/player) | hand_sizes (16b, 4b/player)
+
+    packed_extra: u32, // perspective_player(2b) | exposed_owner(2b/player = 6b) | bidding_player(2b) | trump_broken(1b) | reserved
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+};
 
 struct MctsRolloutOutput {
     team_0_2_score: u32,

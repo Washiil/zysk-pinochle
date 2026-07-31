@@ -6,55 +6,158 @@ use bytemuck::{Pod, Zeroable};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct MctsRolloutInput {
-    // Hands 32 Bytes 
-    pub p0_hand: [u32; 2],
-    pub p1_hand: [u32; 2],
-    pub p2_hand: [u32; 2],
-    pub p3_hand: [u32; 2],
+pub struct MctsRolloutInput {
+    // Perspective player: full hand known.
+    // Others: kown (melded) cards only.
+    pub p0_known: [u32; 2],
+    pub p1_known: [u32; 2],
+    pub p2_known: [u32; 2],
+    pub p3_known: [u32; 2],
 
-    // Mask of the 0 to 3 cards currently sitting on the table.
     pub current_trick_cards: [u32; 2],
+    pub unseen_pool: [u32; 2], // full_deck - all known_cards - played_out_cards
+    pub played_out_cards: [u32; 2], // already trick-collected before this rollout node
 
-    // CPU RNG 8 bytes
+    pub scores: [i32; 2],
+    
+    pub packed_metadata: u32, // winning_card_idx|winning_player|lead_player|current_player|trump_suit|lead_suit|tricks_played
+    pub packed_bids: u32, // team_a_bid | team_b_bid<<16
+    pub packed_constraints: u32, // void_suits(16, 4b/player) | hand_sizes(16, 4b/player)
+    pub packed_meld:     u32, // team_a_meld | team_b_meld << 16
+    
     pub rng_state: [u32; 2],
-
-    // Packed Metadata 12 Bytes
-    pub packed_metadata: u32, // Who is playing, what is trump, etc.
-    pub packed_scores: u32,   // Current meld + trick points
-    pub packed_bids: u32,     // Who won the bid and for what amount
-
-    pub _padding: u32,
 }
 
 impl MctsRolloutInput {
+
+    /// Converts a standard Rust 64-bit bitboard to a GPU-friendly [u32; 2] pair
+    /// where index 0 is lower 32 bits, and index 1 is upper 32 bits.
+    #[inline(always)]
+    pub fn pack_bitboard(bb: u64) -> [u32; 2] {
+        [bb as u32, (bb >> 32) as u32]
+    }
+
+    /// Reconstructs a 64-bit bitboard from a [u32; 2] pair (useful for CPU debugging)
+    #[inline(always)]
+    pub fn unpack_bitboard(pair: [u32; 2]) -> u64 {
+        (pair[0] as u64) | ((pair[1] as u64) << 32)
+    }
+
+    /// Packs trick metadata into a single u32 (21 bits used total)
+    /// - `winning_card_idx`: 0..47 (use 63 for empty trick) [6 bits]
+    /// - `winning_player`: 0..3                             [2 bits]
+    /// - `lead_player`: 0..3                                [2 bits]
+    /// - `current_player`: 0..3                             [2 bits]
+    /// - `trump_suit`: 0..3 (Spades, Hearts, Diamonds, Clubs) [2 bits]
+    /// - `lead_suit`: 0..3 (use 7 for empty trick)          [3 bits]
+    /// - `tricks_played`: 0..12                             [4 bits]
+    #[inline]
     pub fn pack_metadata(
-        winning_card_index: u32,
-        winning_player: u32,
-        lead_player: u32,
-        current_player: u32,
-        trump_suit: u32,
-        lead_suit: u32,
-        tricks_played: u32,
+        winning_card_idx: u8,
+        winning_player: u8,
+        lead_player: u8,
+        current_player: u8,
+        trump_suit: u8,
+        lead_suit: u8,
+        tricks_played: u8,
     ) -> u32 {
-        let mut packed = 0u32;
-        packed |= winning_card_index & 0x3F;               // 6 bits
-        packed |= (winning_player & 0x03) << 6;            // 2 bits
-        packed |= (lead_player & 0x03) << 8;               // 2 bits
-        packed |= (current_player & 0x03) << 10;           // 2 bits
-        packed |= (trump_suit & 0x03) << 12;               // 2 bits
-        packed |= (lead_suit & 0x07) << 14;                // 3 bits
-        packed |= (tricks_played & 0x0F) << 17;            // 4 bits
-        packed
+        let mut m = 0u32;
+        m |= (winning_card_idx as u32 & 0x3F) << 0;
+        m |= (winning_player as u32 & 0x03) << 6;
+        m |= (lead_player as u32 & 0x03) << 8;
+        m |= (current_player as u32 & 0x03) << 10;
+        m |= (trump_suit as u32 & 0x03) << 12;
+        m |= (lead_suit as u32 & 0x07) << 14;
+        m |= (tricks_played as u32 & 0x0F) << 17;
+        m
     }
 
-    pub fn pack_scores(team_a_score: u32, team_b_score: u32) -> u32 {
-        (team_a_score & 0xFFFF) | ((team_b_score & 0xFFFF) << 16)
+    /// Packs Team A and Team B bids (16 bits each)
+    #[inline]
+    pub fn pack_bids(team_a_bid: u16, team_b_bid: u16) -> u32 {
+        (team_a_bid as u32) | ((team_b_bid as u32) << 16)
     }
 
-    pub fn pack_bids(team_a_bid: u32, team_b_bid: u32) -> u32 {
-        (team_a_bid & 0xFFFF) | ((team_b_bid & 0xFFFF) << 16)
+    /// Packs Team A and Team B meld points (16 bits each)
+    #[inline]
+    pub fn pack_meld(team_a_meld: u16, team_b_meld: u16) -> u32 {
+        (team_a_meld as u32) | ((team_b_meld as u32) << 16)
     }
+
+    /// Packs constraints for determinization:
+    /// - `void_suits`: 4 bits per player (P0..P3), where each bit represents a void suit mask (0bS_H_D_C)
+    /// - `hand_sizes`: 4 bits per player (P0..P3), representing how many cards they hold (0..12)
+    #[inline]
+    pub fn pack_constraints(void_suits: [u8; 4], hand_sizes: [u8; 4]) -> u32 {
+        let mut c = 0u32;
+
+        // Bits 0..15: Void suits (4 bits * 4 players)
+        for i in 0..4 {
+            c |= ((void_suits[i] as u32) & 0x0F) << (i * 4);
+        }
+
+        // Bits 16..31: Hand sizes (4 bits * 4 players)
+        for i in 0..4 {
+            c |= ((hand_sizes[i] as u32) & 0x0F) << (16 + i * 4);
+        }
+
+        c
+    }
+
+    /// Creates a complete, GPU-ready input struct from standard CPU parameters.
+    pub fn new(
+        known_hands: [u64; 4],
+        current_trick: u64,
+        unseen_pool: u64,
+        played_out_cards: u64,
+        scores: [i32; 2],
+        metadata: MetadataParams,
+        bids: (u16, u16),
+        melds: (u16, u16),
+        void_suits: [u8; 4],
+        hand_sizes: [u8; 4],
+        rng_seed: u64,
+    ) -> Self {
+        Self {
+            p0_known: Self::pack_bitboard(known_hands[0]),
+            p1_known: Self::pack_bitboard(known_hands[1]),
+            p2_known: Self::pack_bitboard(known_hands[2]),
+            p3_known: Self::pack_bitboard(known_hands[3]),
+
+            current_trick_cards: Self::pack_bitboard(current_trick),
+            unseen_pool: Self::pack_bitboard(unseen_pool),
+            played_out_cards: Self::pack_bitboard(played_out_cards),
+
+            scores,
+
+            packed_metadata: Self::pack_metadata(
+                metadata.winning_card_idx,
+                metadata.winning_player,
+                metadata.lead_player,
+                metadata.current_player,
+                metadata.trump_suit,
+                metadata.lead_suit,
+                metadata.tricks_played,
+            ),
+            packed_bids: Self::pack_bids(bids.0, bids.1),
+            packed_meld: Self::pack_meld(melds.0, melds.1),
+            packed_constraints: Self::pack_constraints(void_suits, hand_sizes),
+
+            rng_state: Self::pack_bitboard(rng_seed),
+        }
+    }
+}
+
+/// Helper container for human-readable metadata parameters
+#[derive(Clone, Copy, Debug)]
+pub struct MetadataParams {
+    pub winning_card_idx: u8,
+    pub winning_player: u8,
+    pub lead_player: u8,
+    pub current_player: u8,
+    pub trump_suit: u8,
+    pub lead_suit: u8,
+    pub tricks_played: u8,
 }
 
 #[repr(C)]
