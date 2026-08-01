@@ -1,6 +1,6 @@
 // Shader for pinochle Monte carlo simulation
 
-// # region Input structs + helpers
+// # region Structs
 struct MctsRolloutInput {
     p0_known: vec2<u32>,
     p1_known: vec2<u32>,
@@ -229,18 +229,110 @@ fn rand_in_range(rng_state: ptr<function, u32>, max_val: u32) -> u32 {
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let thread_id = global_id.x;
-    
-    // Load into local register
     let input = inputs[thread_id];
-    
+
     var metadata = unpack_metadata(input.packed_metadata);
-    var rng_seed = input.rng_state;
+    var rng = input.rng_state.x;
 
-    // If it's P2's turn, check if they are void in the lead suit
-    let p2_voids = get_void_suits(input.packed_constraints, 2u);
-    
-    // Shift a 1 to the lead_suit index. If the AND is > 0, they are void.
-    let is_void_in_lead = (p2_voids & (1u << metadata.lead_suit)) != 0u;
+    // precompute player state
+    var void_suits: array<u32, 4>;
+    var hand_sizes: array<u32, 4>;
+    for (var p = 0u; p < 4u; p++) {
+        void_suits[p] = get_void_suits(input.packed_constraints, p);
+        hand_sizes[p]  = get_hand_size(input.packed_constraints, p);
+    }
 
-    
+    // deal unseen cards
+    var hands: array<vec2<u32>, 4>;
+    hands[0] = input.p0_known;
+    hands[1] = input.p1_known;
+    hands[2] = input.p2_known;
+    hands[3] = input.p3_known;
+
+    var unseen = input.unseen_pool;
+
+    for (var i = 0u; i < 48u; i++) {
+        let half = i / 32u;
+        let bit  = i % 32u;
+        let mask = 1u << bit;
+        if ((unseen[half] & mask) == 0u) { continue; }
+
+        let suit = i / 12u;
+        var candidate_mask = 0u;
+        var candidate_count = 0u;
+
+        for (var p = 0u; p < 4u; p++) {
+            let is_full = (hand_sizes[p] == 0u);
+            let is_void = ((void_suits[p] & (1u << suit)) != 0u);
+            if (!is_full && !is_void) {
+                candidate_mask |= (1u << p);
+                candidate_count += 1u;
+            }
+        }
+
+        // Safety fallback, prevents GPU hang.
+        if (candidate_count == 0u) {
+            for (var p = 0u; p < 4u; p++) {
+                if (hand_sizes[p] > 0u) {
+                    candidate_mask |= (1u << p);
+                    candidate_count += 1u;
+                }
+            }
+        }
+
+        let choice = rand_in_range(&rng, candidate_count);
+        var chosen = 0u;
+        var seen = 0u;
+        for (var p = 0u; p < 4u; p++) {
+            if ((candidate_mask & (1u << p)) != 0u) {
+                if (seen == choice) { chosen = p; }
+                seen += 1u;
+            }
+        }
+
+        hands[chosen][half] |= mask;
+        hand_sizes[chosen] -= 1u;
+    }
+
+    // Simulate remaining tricks
+    var scores = input.scores;                // team A=0&2, team B=1&3
+    let total_tricks = 12u;
+    let completed = metadata.tricks_played;   // already finished
+    var leader = metadata.lead_player;
+
+    for (var trick = completed; trick < total_tricks; trick++) {
+        var trick_cards: array<u32, 4>;
+        var first_suit: u32 = 4u; // 4 = “no suit yet” (leader can play anything)
+
+        for (var turn = 0u; turn < 4u; turn++) {
+            let player = (leader + turn) % 4u;
+            let chosen = select_legal_card(
+                &hands[player],
+                first_suit,
+                metadata.trump_suit,
+                &rng
+            );
+            trick_cards[turn] = chosen;
+            if (turn == 0u) {
+                first_suit = chosen / 12u;   // set lead suit for followers
+            }
+        }
+
+        let result = evaluate_trick(trick_cards, leader, metadata.trump_suit);
+        let winner = result.x;
+        let points = result.y;
+
+        // Add points to the winning team
+        if (winner == 0u || winner == 2u) {
+            scores.x += i32(points);
+        } else {
+            scores.y += i32(points);
+        }
+
+        leader = winner;   // winner leads next trick
+    }
+
+    // Write output
+    outputs[thread_id].team_0_2_score = u32(scores.x);
+    outputs[thread_id].team_1_3_score = u32(scores.y);
 }
