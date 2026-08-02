@@ -225,15 +225,15 @@ fn evaluate_trick(
 ) -> vec2<u32> {
     var best_card: u32 = cards[0];
     var winner: u32 = lead_player;
-    var total_points: u32 = 0;
+    var total_points: u32 = card_point(cards[0]);
 
     for (var i = 1u; i < 4u; i++) {
         let card = cards[i];
         total_points += card_point(card);
 
         let suit = card / 12u;
-        let rank = card % 12u;
-        let best_rank = best_card % 12u;
+        let rank = (card % 12u) / 2;
+        let best_rank = (best_card % 12u) / 2;
         let best_suit = best_card / 12u;
 
         var beats = false;
@@ -364,6 +364,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
 
         leader = winner;
+    }
+
+    if (leader == 0u || leader == 2u) { 
+        scores.x += 1; 
+    } 
+    else { 
+        scores.y += 1; 
     }
 
     outputs[thread_id].team_0_2_score = u32(scores.x);
