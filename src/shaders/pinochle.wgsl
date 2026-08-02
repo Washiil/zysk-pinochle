@@ -83,12 +83,11 @@ fn rand_in_range(rng_state: ptr<function, u32>, max_val: u32) -> u32 {
 //  Card helpers 
 fn card_point(card: u32) -> u32 {
     let r = card % 12u;
-    if (r < 6u)  { 
-        return 0;  
-    }  // Q
-    else { 
-        return 1;  
-    }  // K
+    // First copy: K=3, 10=4, A=5. Second copy: K=9, 10=10, A=11.
+    if (r == 3u || r == 4u || r == 5u || r == 9u || r == 10u || r == 11u) {
+        return 1u;
+    }
+    return 0u;
 }
 
 // Result of selecting a legal card: the chosen card index and the hand with that card removed.
@@ -107,6 +106,7 @@ fn select_legal_card(
     rng: ptr<function, u32>
 ) -> LegalCardResult {
     let must_follow = lead_suit < 4u;
+    var follow_exists = false;
     var candidate_count: u32 = 0u;
 
     // First pass: count how many cards we can legally play
@@ -129,6 +129,10 @@ fn select_legal_card(
                 candidate_count += 1u;
             }
         }
+    }
+
+    if (candidate_count > 0u) { 
+        follow_exists = true; 
     }
 
     // If we couldn't follow suit, any card is allowed (second pass)
@@ -169,7 +173,7 @@ fn select_legal_card(
 
         // Check legality (same logic as counting pass)
         var legal = true;
-        if (must_follow) {
+        if (must_follow && follow_exists) {
             let suit = i / 12u;
             legal = (suit == lead_suit);
         }
@@ -232,8 +236,9 @@ fn evaluate_trick(
         total_points += card_point(card);
 
         let suit = card / 12u;
-        let rank = (card % 12u) / 2;
-        let best_rank = (best_card % 12u) / 2;
+        let rank = card % 6u;
+
+        let best_rank = best_card % 6u;
         let best_suit = best_card / 12u;
 
         var beats = false;
