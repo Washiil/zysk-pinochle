@@ -19,12 +19,12 @@ pub struct MctsRolloutInput {
     pub played_out_cards: [u32; 2], // already trick-collected before this rollout node
 
     pub scores: [i32; 2],
-    
+
     pub packed_metadata: u32, // winning_card_idx|winning_player|lead_player|current_player|trump_suit|lead_suit|tricks_played
     pub packed_bids: u32, // team_a_bid | team_b_bid<<16
     pub packed_constraints: u32, // void_suits(16, 4b/player) | hand_sizes(16, 4b/player)
     pub packed_meld:     u32, // team_a_meld | team_b_meld << 16
-    
+
     pub rng_state: [u32; 2],
 }
 
@@ -44,13 +44,13 @@ impl MctsRolloutInput {
     }
 
     /// Packs trick metadata into a single u32 (21 bits used total)
-    /// - `winning_card_idx`: 0..47 (use 63 for empty trick) [6 bits]
-    /// - `winning_player`: 0..3                             [2 bits]
-    /// - `lead_player`: 0..3                                [2 bits]
-    /// - `current_player`: 0..3                             [2 bits]
+    /// - `winning_card_idx`: 0..47 (use 63 for empty trick)   [6 bits]
+    /// - `winning_player`: 0..3                               [2 bits]
+    /// - `lead_player`: 0..3                                  [2 bits]
+    /// - `current_player`: 0..3                               [2 bits]
     /// - `trump_suit`: 0..3 (Spades, Hearts, Diamonds, Clubs) [2 bits]
-    /// - `lead_suit`: 0..3 (use 7 for empty trick)          [3 bits]
-    /// - `tricks_played`: 0..12                             [4 bits]
+    /// - `lead_suit`: 0..3 (use 7 for empty trick)            [3 bits]
+    /// - `tricks_played`: 0..12                               [4 bits]
     #[inline]
     pub fn pack_metadata(
         winning_card_idx: u8,
@@ -170,201 +170,218 @@ pub struct MctsRolloutOutput {
 fn main() {
     env_logger::init();
 
+    // --- Hardcoded starting point -------------------------------------------------
+    // Deck layout: 48 cards, index = suit * 12 + rank, suit 0..3 = Spades/Hearts/Diamonds/Clubs,
+    // rank 0..11 = two copies each of 9, J, Q, K, 10, A (double pinochle deck).
+
+    let p0_hand: u64 = 0x0000_0000_0000_0FFF; // cards 0..11
+    let full_deck: u64 = 0x0000_FFFF_FFFF_FFFF; // 48 one-bits
+    let unseen_pool: u64 = full_deck & !p0_hand; // remaining 36 cards, unseen to P0
+    let played_out_cards: u64 = 0x0; // nothing played yet
+    let current_trick: u64 = 0x0; // trick not yet started
+
     let input = MctsRolloutInput::new(
-        [0x000000000000FFFF, 0x0, 0x0, 0x0], // known hands (u64 bitboards)
-        0x0,                                // current trick empty
-        0x0000FFFFFFFF0000,                 // unseen pool
-        0xFFFF000000000000,                 // played out cards
-        [120, 90],                          // team scores
+        [p0_hand, 0x0, 0x0, 0x0],           // known hands (u64 bitboards)
+        current_trick,                       // current trick empty
+        unseen_pool,                         // unseen pool
+        played_out_cards,                    // played out cards
+        [0, 0],                              // team scores, start of hand
         MetadataParams {
-            winning_card_idx: 63,           // no winner yet (63 = empty flag)
+            winning_card_idx: 63,            // no winner yet (63 = empty flag)
             winning_player: 0,
             lead_player: 0,
             current_player: 0,
-            trump_suit: 1,                  // Hearts
-            lead_suit: 7,                   // None (7 = empty flag)
-            tricks_played: 6,
+            trump_suit: 1,                   // Hearts
+            lead_suit: 7,                    // None (7 = empty flag)
+            tricks_played: 0,                // no tricks played yet
         },
-        (250, 0),                           // bids: Team A 250, Team B 0
-        (60, 20),                           // meld points
-        [0b0000, 0b0001, 0b0100, 0b0000],   // P1 void in Spades, P2 void in Diamonds
-        [6, 6, 6, 6],                       // 6 cards remaining per hand
-        1234567890123456789,                // RNG seed
+        (15, 0),                            // bids: Team A 300, Team B 0
+        (0, 0),                             // meld points
+        [0b0000, 0b0000, 0b0000, 0b0000],    // no known voids yet
+        [0, 12, 12, 12],                     // P0 fully known (0 left to deal), others need 12 each
+        0x853c_49e6_748f_ea9b,               // RNG seed (non-zero lower 32 bits)
     );
 
     // Safe zero-copy cast to bytes for WGPU buffer submission:
     let bytes: &[u8] = bytemuck::bytes_of(&input);
     assert_eq!(bytes.len(), 88); // 88 bytes continuous payload
+    assert_eq!(std::mem::size_of::<MctsRolloutInput>(), 88);
+    assert_eq!(std::mem::size_of::<MctsRolloutOutput>(), 8);
 
-    // // Example input: a handful of 256-bit hands to evaluate.
-    // // Replace this with your real hand-generation logic.
-    // let hands: Vec<MctsRolloutInput> = vec![
+    // The actual batch of rollouts to evaluate on the GPU. This must actually contain
+    // the input(s) we built above, or the shader has nothing to do.
+    let hands: Vec<MctsRolloutInput> = vec![input];
 
-    // ];
+    // Load wgpu
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
-    // // Load wgpu
-    // let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    // We then create an `Adapter` which represents a physical gpu in the system
+    let adapter =
+        pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+            .expect("Failed to create adapter");
 
-    // // We then create an `Adapter` which represents a physical gpu in the system
-    // let adapter =
-    //     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-    //         .expect("Failed to create adapter");
+    // Check to see if the adapter supports compute shaders
+    let downlevel_capabilities = adapter.get_downlevel_capabilities();
+    if !downlevel_capabilities
+        .flags
+        .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+    {
+        panic!("Adapter does not support compute shaders");
+    }
 
-    // // Check to see if the adapter supports compute shaders
-    // let downlevel_capabilities = adapter.get_downlevel_capabilities();
-    // if !downlevel_capabilities
-    //     .flags
-    //     .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
-    // {
-    //     panic!("Adapter does not support compute shaders");
-    // }
+    // We then create a `Device` and a `Queue` from the `Adapter`.
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: None,
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::downlevel_defaults(),
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        memory_hints: wgpu::MemoryHints::MemoryUsage,
+        trace: wgpu::Trace::Off,
+    }))
+        .expect("Failed to create device");
 
-    // // We then create a `Device` and a `Queue` from the `Adapter`.
-    // let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-    //     label: None,
-    //     required_features: wgpu::Features::empty(),
-    //     required_limits: wgpu::Limits::downlevel_defaults(),
-    //     experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    //     memory_hints: wgpu::MemoryHints::MemoryUsage,
-    //     trace: wgpu::Trace::Off,
-    // }))
-    //     .expect("Failed to create device");
+    // Create a shader module from our shader code. This will parse and validate the shader.
+    let module = device.create_shader_module(wgpu::include_wgsl!("../shaders/pinochle.wgsl"));
 
-    // // Create a shader module from our shader code. This will parse and validate the shader.
-    // let module = device.create_shader_module(wgpu::include_wgsl!("../shaders/pinochle.wgsl"));
+    // Input buffer: array<MctsRolloutInput> — each element is 88 bytes.
+    let input_hands_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("input_hands"),
+        contents: bytemuck::cast_slice(&hands),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    });
 
-    // // Input buffer: array<Bit256> — each element is 8 x u32 = 32 bytes.
-    // let input_hands_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-    //     label: Some("input_hands"),
-    //     contents: bytemuck::cast_slice(&hands),
-    //     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-    // });
+    // Output buffer: array<MctsRolloutOutput>, one 8-byte result per hand.
+    let output_size =
+        (hands.len().max(1) * std::mem::size_of::<MctsRolloutOutput>()) as u64;
+    let output_results_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("output_results"),
+        size: output_size,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
 
-    // // Output buffer: array<u32>, one result per hand.
-    // let output_size = (hands.len().max(1) * std::mem::size_of::<u32>()) as u64;
-    // let output_results_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-    //     label: Some("output_results"),
-    //     size: output_size,
-    //     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-    //     mapped_at_creation: false,
-    // });
+    // CPU-readable staging buffer for the output.
+    let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("download"),
+        size: output_size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
 
-    // // CPU-readable staging buffer for the output.
-    // let download_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-    //     label: Some("download"),
-    //     size: output_size,
-    //     usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-    //     mapped_at_creation: false,
-    // });
+    // A bind group layout describes the types of resources that a bind group can contain
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: None,
+        entries: &[
+            // input_hands: array<MctsRolloutInput>, read-only storage. Min size = one
+            // MctsRolloutInput (88 bytes).
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    min_binding_size: Some(NonZeroU64::new(88).unwrap()),
+                    has_dynamic_offset: false,
+                },
+                count: None,
+            },
+            // output_results: array<MctsRolloutOutput>, read-write storage. Min size = one
+            // MctsRolloutOutput (8 bytes: two u32 fields).
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    min_binding_size: Some(NonZeroU64::new(8).unwrap()),
+                    has_dynamic_offset: false,
+                },
+                count: None,
+            },
+        ],
+    });
 
-    // // A bind group layout describes the types of resources that a bind group can contain
-    // let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-    //     label: None,
-    //     entries: &[
-    //         // input_hands: array<Bit256>, read-only storage. Min size = one Bit256 (32 bytes).
-    //         wgpu::BindGroupLayoutEntry {
-    //             binding: 0,
-    //             visibility: wgpu::ShaderStages::COMPUTE,
-    //             ty: wgpu::BindingType::Buffer {
-    //                 ty: wgpu::BufferBindingType::Storage { read_only: true },
-    //                 min_binding_size: Some(NonZeroU64::new(32).unwrap()),
-    //                 has_dynamic_offset: false,
-    //             },
-    //             count: None,
-    //         },
-    //         // output_results: array<u32>, read-write storage. Min size = one u32 (4 bytes).
-    //         wgpu::BindGroupLayoutEntry {
-    //             binding: 1,
-    //             visibility: wgpu::ShaderStages::COMPUTE,
-    //             ty: wgpu::BindingType::Buffer {
-    //                 ty: wgpu::BufferBindingType::Storage { read_only: false },
-    //                 min_binding_size: Some(NonZeroU64::new(4).unwrap()),
-    //                 has_dynamic_offset: false,
-    //             },
-    //             count: None,
-    //         },
-    //     ],
-    // });
+    // The bind group contains the actual resources to bind to the pipeline.
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: input_hands_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: output_results_buffer.as_entire_binding(),
+            },
+        ],
+    });
 
-    // // The bind group contains the actual resources to bind to the pipeline.
-    // let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-    //     label: None,
-    //     layout: &bind_group_layout,
-    //     entries: &[
-    //         wgpu::BindGroupEntry {
-    //             binding: 0,
-    //             resource: input_hands_buffer.as_entire_binding(),
-    //         },
-    //         wgpu::BindGroupEntry {
-    //             binding: 1,
-    //             resource: output_results_buffer.as_entire_binding(),
-    //         },
-    //     ],
-    // });
+    // The pipeline layout describes the bind groups that a pipeline expects
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
 
-    // // The pipeline layout describes the bind groups that a pipeline expects
-    // let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-    //     label: None,
-    //     bind_group_layouts: &[Some(&bind_group_layout)],
-    //     immediate_size: 0,
-    // });
+    // The pipeline is the ready-to-go program state for the GPU
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: Some(&pipeline_layout),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
 
-    // // The pipeline is the ready-to-go program state for the GPU
-    // let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-    //     label: None,
-    //     layout: Some(&pipeline_layout),
-    //     module: &module,
-    //     entry_point: Some("main"),
-    //     compilation_options: wgpu::PipelineCompilationOptions::default(),
-    //     cache: None,
-    // });
+    // The command encoder allows us to record commands that we will later submit to the GPU.
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-    // // The command encoder allows us to record commands that we will later submit to the GPU.
-    // let mut encoder =
-    //     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    // A compute pass is a single series of compute operations
+    let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: None,
+        timestamp_writes: None,
+    });
 
-    // // A compute pass is a single series of compute operations
-    // let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-    //     label: None,
-    //     timestamp_writes: None,
-    // });
+    compute_pass.set_pipeline(&pipeline);
+    compute_pass.set_bind_group(0, &bind_group, &[]);
 
-    // compute_pass.set_pipeline(&pipeline);
-    // compute_pass.set_bind_group(0, &bind_group, &[]);
+    // Shader's workgroup_size is 256x1x1, so we ceiling-divide the number of hands by 256.
+    let workgroup_count = hands.len().div_ceil(256).max(1);
+    compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
 
-    // // Shader's workgroup_size is 64x1x1, so we ceiling-divide the number of hands by 64.
-    // let workgroup_count = hands.len().div_ceil(64).max(1);
-    // compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
+    drop(compute_pass);
 
-    // drop(compute_pass);
+    // Copy the output from GPU-only storage into the CPU-mappable download buffer.
+    encoder.copy_buffer_to_buffer(
+        &output_results_buffer,
+        0,
+        &download_buffer,
+        0,
+        output_results_buffer.size(),
+    );
 
-    // // Copy the output from GPU-only storage into the CPU-mappable download buffer.
-    // encoder.copy_buffer_to_buffer(
-    //     &output_results_buffer,
-    //     0,
-    //     &download_buffer,
-    //     0,
-    //     output_results_buffer.size(),
-    // );
+    let command_buffer = encoder.finish();
+    queue.submit([command_buffer]);
 
-    // let command_buffer = encoder.finish();
-    // queue.submit([command_buffer]);
+    // Map the download buffer so we can read it.
+    let buffer_slice = download_buffer.slice(..);
+    buffer_slice.map_async(wgpu::MapMode::Read, |_| {
+        // We wait synchronously below via device.poll, so nothing needed here.
+    });
 
-    // // Map the download buffer so we can read it.
-    // let buffer_slice = download_buffer.slice(..);
-    // buffer_slice.map_async(wgpu::MapMode::Read, |_| {
-    //     // We wait synchronously below via device.poll, so nothing needed here.
-    // });
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
-    // device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    // Read the data back as MctsRolloutOutput (team_0_2_score, team_1_3_score) per hand.
+    let data = buffer_slice.get_mapped_range().unwrap();
+    let result: Vec<MctsRolloutOutput> = bytemuck::allocation::pod_collect_to_vec(&data);
+    drop(data);
+    download_buffer.unmap();
 
-    // // Read the data back as u32 (0 = false, 1 = true per hand).
-    // let data = buffer_slice.get_mapped_range().unwrap();
-    // let result: Vec<u32> = bytemuck::allocation::pod_collect_to_vec(&data);
-    // drop(data);
-    // download_buffer.unmap();
-
-    // for (i, (hand, passed)) in hands.iter().zip(result.iter()).enumerate() {
-    //     println!("Hand {i}: {:?} -> {}", hand.data, *passed == 1);
-    // }
+    for (i, (hand, output)) in hands.iter().zip(result.iter()).enumerate() {
+        let p0_hand = MctsRolloutInput::unpack_bitboard(hand.p0_known);
+        println!(
+            "Hand {i}: P0 known cards = {:#014x} -> Team 0/2 = {}, Team 1/3 = {}",
+            p0_hand, output.team_0_2_score, output.team_1_3_score
+        );
+    }
 }
